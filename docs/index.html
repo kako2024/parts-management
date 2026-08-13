@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>備品管理</title>
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📦</text></svg>">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body class="bg-slate-100 text-slate-800 antialiased">
+
+<!-- ========== トースト ========== -->
+<div id="toast-area" class="fixed left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md space-y-2"
+     style="top: calc(env(safe-area-inset-top, 0px) + 12px);"></div>
+
+<!-- ========== ローディング ========== -->
+<div id="loading" class="hidden fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center">
+  <div class="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3">
+    <span class="spinner"></span>
+    <span id="loading-text" class="text-sm font-medium">読み込み中…</span>
+  </div>
+</div>
+
+<!-- ========== ログイン ========== -->
+<section id="view-login" class="hidden min-h-[100dvh] flex flex-col items-center justify-center px-6 gap-6">
+  <div class="text-center">
+    <div class="text-6xl mb-3">📦</div>
+    <h1 class="text-2xl font-bold tracking-tight">備品管理</h1>
+    <p class="mt-2 text-sm text-slate-500 leading-relaxed">
+      許可されたメンバーのみ利用できます。<br>Google アカウントでログインしてください。
+    </p>
+  </div>
+  <div id="gsi-button" class="min-h-[44px]"></div>
+  <p id="login-error" class="hidden text-sm text-rose-600 text-center max-w-sm leading-relaxed"></p>
+</section>
+
+<!-- ========== アプリ本体 ========== -->
+<div id="app" class="hidden min-h-[100dvh] flex flex-col">
+
+  <!-- ヘッダー -->
+  <header class="sticky top-0 z-30 bg-slate-900 text-white shadow-md"
+          style="padding-top: env(safe-area-inset-top, 0px);">
+    <div class="h-14 px-4 flex items-center gap-3">
+      <button id="btn-back" class="hidden -ml-2 p-2 rounded-lg active:bg-white/10" aria-label="戻る">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+        </svg>
+      </button>
+      <h1 id="header-title" class="flex-1 font-bold text-base truncate">備品一覧</h1>
+      <button id="btn-user" class="shrink-0 w-9 h-9 rounded-full bg-white/15 overflow-hidden active:opacity-70" aria-label="アカウント">
+        <img id="user-avatar" alt="" class="w-full h-full object-cover hidden">
+        <span id="user-initial" class="text-sm font-bold leading-9 block"></span>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 overflow-y-auto pb-24">
+
+    <!-- ---------- 一覧 ---------- -->
+    <section id="view-list" class="hidden">
+      <div class="sticky top-0 z-20 bg-slate-100/95 backdrop-blur px-4 pt-3 pb-2 space-y-2 border-b border-slate-200">
+        <div class="relative">
+          <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+          </svg>
+          <input id="search-input" type="search" inputmode="search" placeholder="備品名・ID・場所で検索"
+                 class="w-full h-11 pl-10 pr-3 rounded-xl border border-slate-300 bg-white text-base
+                        focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent">
+        </div>
+        <div class="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
+          <select id="filter-status" class="chip-select"><option value="">在庫: すべて</option></select>
+          <select id="filter-category" class="chip-select"><option value="">カテゴリ: すべて</option></select>
+          <select id="filter-location" class="chip-select"><option value="">場所: すべて</option></select>
+          <button id="btn-clear-filter" class="chip-btn">クリア</button>
+        </div>
+        <p id="list-count" class="text-xs text-slate-500 px-0.5"></p>
+      </div>
+      <div id="item-list" class="p-3 space-y-2.5"></div>
+    </section>
+
+    <!-- ---------- 詳細 ---------- -->
+    <section id="view-detail" class="hidden pb-4"></section>
+
+    <!-- ---------- 登録 / 編集フォーム ---------- -->
+    <section id="view-form" class="hidden p-4"></section>
+
+    <!-- ---------- QR スキャン ---------- -->
+    <section id="view-scan" class="hidden">
+      <div class="p-4 space-y-4">
+        <div id="qr-reader" class="w-full rounded-2xl overflow-hidden bg-black"></div>
+        <p id="scan-hint" class="text-sm text-slate-600 text-center leading-relaxed">
+          備品ラベルの QR コードを枠内に写してください。
+        </p>
+        <div class="pt-2 border-t border-slate-200">
+          <label class="block text-sm font-medium mb-1.5">読み取れないときは備品IDを直接入力</label>
+          <div class="flex gap-2">
+            <input id="manual-id" type="text" placeholder="ITEM-0001" autocapitalize="characters"
+                   class="flex-1 h-12 px-3 rounded-xl border border-slate-300 bg-white text-base
+                          focus:outline-none focus:ring-2 focus:ring-slate-900">
+            <button id="btn-manual-go" class="h-12 px-5 rounded-xl bg-slate-900 text-white font-semibold active:bg-slate-700">開く</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ボトムナビ -->
+  <nav id="bottom-nav" class="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 shadow-[0_-2px_12px_rgba(0,0,0,0.06)]"
+       style="padding-bottom: env(safe-area-inset-bottom, 0px);">
+    <div class="grid grid-cols-3 h-16">
+      <button data-nav="list" class="nav-btn">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+        <span>一覧</span>
+      </button>
+      <button data-nav="scan" class="nav-btn">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2M4 12h16"/>
+        </svg>
+        <span>スキャン</span>
+      </button>
+      <button data-nav="new" class="nav-btn">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14"/>
+        </svg>
+        <span>追加</span>
+      </button>
+    </div>
+  </nav>
+</div>
+
+<!-- ========== アカウントシート ========== -->
+<div id="user-sheet" class="hidden fixed inset-0 z-40">
+  <div class="absolute inset-0 bg-slate-900/40" data-close-sheet></div>
+  <div class="absolute bottom-0 inset-x-0 bg-white rounded-t-3xl p-5 space-y-4"
+       style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);">
+    <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto"></div>
+    <div>
+      <p id="sheet-name" class="font-semibold"></p>
+      <p id="sheet-email" class="text-sm text-slate-500 break-all"></p>
+    </div>
+    <button id="btn-logout" class="w-full h-12 rounded-xl bg-slate-100 font-semibold active:bg-slate-200">ログアウト</button>
+    <button class="w-full h-12 rounded-xl text-slate-500" data-close-sheet>閉じる</button>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

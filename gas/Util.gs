@@ -1,0 +1,103 @@
+/**
+ * Util.gs
+ * ------------------------------------------------------------------
+ * 共通ユーティリティとエラー型。
+ * ------------------------------------------------------------------
+ */
+
+/**
+ * API 用の例外。code / message / httpish なステータスを持つ。
+ * GAS Web App は常に HTTP 200 を返すため、status はレスポンス JSON に載せて
+ * フロント側で分岐させる用途で使う。
+ */
+function ApiError_(code, message, status) {
+  var e = new Error(message);
+  e.name = 'ApiError';
+  e.code = code;
+  e.status = status || 400;
+  return e;
+}
+
+/** JSON レスポンスを組み立てる */
+function jsonOut_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function okRes_(data) {
+  return jsonOut_({ ok: true, data: data === undefined ? null : data });
+}
+
+function errRes_(err) {
+  var code = (err && err.code) || 'INTERNAL_ERROR';
+  var status = (err && err.status) || 500;
+  var message = (err && err.message) || String(err);
+  if (status >= 500) {
+    console.error('[API ERROR] ' + code + ' : ' + message + '\n' + (err && err.stack));
+  }
+  return jsonOut_({ ok: false, error: { code: code, message: message, status: status } });
+}
+
+/** 'YYYY-MM-DD HH:mm:ss' */
+function nowString_() {
+  return Utilities.formatDate(new Date(), CONST.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+}
+
+/** 'YYYYMMDD' */
+function todayCompact_() {
+  return Utilities.formatDate(new Date(), CONST.TIMEZONE, 'yyyyMMdd');
+}
+
+/** 値を安全に文字列化（Date はフォーマット、null/undefined は空文字） */
+function toStr_(v) {
+  if (v === null || v === undefined) return '';
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return Utilities.formatDate(v, CONST.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
+  }
+  return String(v);
+}
+
+/** シートの TRUE/FALSE 表現を真偽値へ寄せる */
+function toBool_(v) {
+  if (v === true) return true;
+  if (v === false || v === '' || v === null || v === undefined) return false;
+  var s = String(v).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+}
+
+/** 数値化。空なら null */
+function toNumOrNull_(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  var n = Number(v);
+  return isNaN(n) ? null : n;
+}
+
+/** 入力文字列のトリム + 長さ制限 */
+function sanitizeText_(v, maxLen) {
+  var s = toStr_(v).trim();
+  if (maxLen && s.length > maxLen) s = s.slice(0, maxLen);
+  return s;
+}
+
+/** ヘッダー行から {列名: 0始まりindex} を作る */
+function headerIndex_(headerRow) {
+  var idx = {};
+  for (var i = 0; i < headerRow.length; i++) {
+    var key = toStr_(headerRow[i]).trim();
+    if (key) idx[key] = i;
+  }
+  return idx;
+}
+
+/** 必須ヘッダーが揃っているか検証 */
+function assertHeaders_(idx, required, sheetName) {
+  var missing = required.filter(function (h) { return idx[h] === undefined; });
+  if (missing.length) {
+    throw new ApiError_(
+      'SHEET_SCHEMA_ERROR',
+      'シート "' + sheetName + '" に必要な列がありません: ' + missing.join(', '),
+      500
+    );
+  }
+}

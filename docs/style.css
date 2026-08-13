@@ -1,0 +1,160 @@
+/* ------------------------------------------------------------------
+   style.css
+   Tailwind CDN を土台に、繰り返し使う部品だけを素の CSS で定義する。
+   ------------------------------------------------------------------ */
+
+html, body {
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP",
+               "Yu Gothic UI", Meiryo, sans-serif;
+}
+
+/* iOS で input にフォーカスすると画面が拡大するのを防ぐ（16px 以上必須） */
+input, select, textarea, button {
+  font-size: 16px;
+}
+
+/* ---- スピナー ---- */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid #cbd5e1;
+  border-top-color: #0f172a;
+  border-radius: 9999px;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- フィルタチップ ---- */
+.chip-select,
+.chip-btn {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 9999px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 13px;
+  color: #334155;
+  white-space: nowrap;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.chip-select:focus,
+.chip-btn:focus { outline: 2px solid #0f172a; outline-offset: 1px; }
+.chip-select.active { border-color: #0f172a; background: #0f172a; color: #fff; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ---- ボトムナビ ---- */
+.nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  transition: color .15s;
+}
+.nav-btn:active { background: #f1f5f9; }
+.nav-btn.active { color: #0f172a; }
+
+/* ---- 在庫ステータスのバッジ ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.badge::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: 9999px;
+  background: currentColor;
+}
+.badge-ok     { background: #dcfce7; color: #15803d; }
+.badge-low    { background: #fef3c7; color: #b45309; }
+.badge-out    { background: #fee2e2; color: #b91c1c; }
+.badge-none   { background: #e2e8f0; color: #475569; }
+
+/* ---- ステータス切替ボタン（詳細画面） ---- */
+.status-btn {
+  height: 56px;
+  border-radius: 14px;
+  border: 2px solid #e2e8f0;
+  background: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  color: #475569;
+  transition: transform .08s, border-color .15s, background .15s;
+}
+.status-btn:active { transform: scale(0.97); }
+.status-btn.selected-ok  { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
+.status-btn.selected-low { border-color: #d97706; background: #fffbeb; color: #b45309; }
+.status-btn.selected-out { border-color: #dc2626; background: #fef2f2; color: #b91c1c; }
+
+/* ---- フォーム部品 ---- */
+.field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 6px;
+}
+.field-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+.field-input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px #0f172a;
+}
+
+/* ---- トースト ---- */
+.toast {
+  padding: 12px 16px;
+  border-radius: 14px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  animation: toast-in .18s ease-out;
+  line-height: 1.5;
+}
+.toast-success { background: #16a34a; }
+.toast-error   { background: #dc2626; }
+.toast-info    { background: #334155; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---- html5-qrcode の見た目調整 ---- */
+#qr-reader video { width: 100% !important; display: block; }
+#qr-reader img[alt="Info icon"] { display: none; }
+#qr-reader__dashboard_section_csr button {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #fff;
+  font-weight: 600;
+}
+#qr-reader__dashboard_section_swaplink { color: #0f172a; }
