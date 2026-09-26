@@ -12,7 +12,6 @@
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 
@@ -57,7 +56,7 @@
       </button>
       <h1 id="header-title" class="flex-1 font-bold text-base truncate">備品一覧</h1>
       <button id="btn-user" class="shrink-0 w-9 h-9 rounded-full bg-white/15 overflow-hidden active:opacity-70" aria-label="アカウント">
-        <img id="user-avatar" alt="" class="w-full h-full object-cover hidden">
+        <img id="user-avatar" alt="" referrerpolicy="no-referrer" class="w-full h-full object-cover hidden">
         <span id="user-initial" class="text-sm font-bold leading-9 block"></span>
       </button>
     </div>
@@ -77,12 +76,15 @@
                         focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent">
         </div>
         <div class="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
+          <button id="btn-restock" class="chip-btn" aria-pressed="false">要補充</button>
           <select id="filter-status" class="chip-select"><option value="">在庫: すべて</option></select>
           <select id="filter-category" class="chip-select"><option value="">カテゴリ: すべて</option></select>
           <select id="filter-location" class="chip-select"><option value="">場所: すべて</option></select>
           <button id="btn-clear-filter" class="chip-btn">クリア</button>
         </div>
         <p id="list-count" class="text-xs text-slate-500 px-0.5"></p>
+        <div id="sync-list" class="flex items-center gap-2 text-xs px-0.5 empty:hidden"></div>
+        <button id="btn-photo-reload-list" class="hidden text-xs font-semibold text-rose-600 underline px-0.5">読み込めなかった写真を読み直す</button>
       </div>
       <div id="item-list" class="p-3 space-y-2.5"></div>
     </section>
@@ -156,6 +158,8 @@
 </div>
 
 <script src="config.js"></script>
+<script src="perf.js"></script>
+<script src="cache.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

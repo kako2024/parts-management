@@ -9,3 +9,6 @@ desktop.ini
 
 # 依存物
 node_modules/
+
+# テストの出力
+_test/shot-*.png

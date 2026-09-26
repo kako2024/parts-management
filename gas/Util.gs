@@ -10,16 +10,53 @@
  * GAS Web App は常に HTTP 200 を返すため、status はレスポンス JSON に載せて
  * フロント側で分岐させる用途で使う。
  */
-function ApiError_(code, message, status) {
+function ApiError_(code, message, status, data) {
   var e = new Error(message);
   e.name = 'ApiError';
   e.code = code;
   e.status = status || 400;
+  if (data !== undefined) e.data = data; // 画面が次の操作を決めるための値（OP_MISMATCH の備品など）
   return e;
+}
+
+/**
+ * このリクエストでシートへの書き込みを始めたか。書き込みの途中で失敗すると、一部だけ保存された
+ * 可能性があるので、エラーの応答に maybeSaved を付けて画面に知らせる（画面は同じ操作 ID で送り直す）。
+ */
+var WRITE_STARTED_ = false;
+
+function noteWriteStarted_() {
+  WRITE_STARTED_ = true;
+}
+
+/* =========================================================
+ * 処理時間の計測（PERF.md の内訳計測用）
+ * リクエストに debugTiming: true があるときだけ区間ごとの ms を記録し、
+ * レスポンスの timing に載せる。無いときは何もしない。
+ * =======================================================*/
+
+var TIMING_ = null;
+
+/** @param {number} t0 計測の起点（doPost に入った時刻） */
+function timingStart_(enabled, t0) {
+  TIMING_ = enabled ? { t0: t0, last: t0, laps: [] } : null;
+}
+
+/** 前回の lap_ からの経過を label として記録する */
+function lap_(label) {
+  if (!TIMING_) return;
+  var now = Date.now();
+  TIMING_.laps.push(label + '=' + (now - TIMING_.last));
+  TIMING_.last = now;
 }
 
 /** JSON レスポンスを組み立てる */
 function jsonOut_(obj) {
+  if (TIMING_) {
+    lap_('rest');
+    obj.timing = { total: Date.now() - TIMING_.t0, laps: TIMING_.laps.join(' ') };
+    TIMING_ = null;
+  }
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
@@ -36,7 +73,10 @@ function errRes_(err) {
   if (status >= 500) {
     console.error('[API ERROR] ' + code + ' : ' + message + '\n' + (err && err.stack));
   }
-  return jsonOut_({ ok: false, error: { code: code, message: message, status: status } });
+  var error = { code: code, message: message, status: status };
+  if (WRITE_STARTED_) error.maybeSaved = true;
+  if (err && err.data !== undefined) error.data = err.data;
+  return jsonOut_({ ok: false, error: error });
 }
 
 /** 'YYYY-MM-DD HH:mm:ss' */

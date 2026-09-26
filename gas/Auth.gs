@@ -26,7 +26,21 @@ function verifyIdToken_(idToken) {
     Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, idToken)
   );
   var cached = cache.get(cacheKey);
-  if (cached) return JSON.parse(cached);
+  if (cached) {
+    lap_('token(cache)');
+    return JSON.parse(cached);
+  }
+
+  // 計測専用の認証省略（PERF.md 1.5）。perfBypassUser_ はリポジトリに含めず、
+  // 計測の間だけ GAS に置くファイルで定義する。そのファイルが無ければ何もしない。
+  // ファイルを撤去した時点で失効させるため、結果はキャッシュしない（毎回ここで判定する）。
+  if (typeof perfBypassUser_ === 'function') {
+    var bypassUser = perfBypassUser_(idToken);
+    if (bypassUser) {
+      lap_('token(bypass)');
+      return bypassUser;
+    }
+  }
 
   var res = UrlFetchApp.fetch(TOKENINFO_URL + encodeURIComponent(idToken), {
     method: 'get',
@@ -76,6 +90,7 @@ function verifyIdToken_(idToken) {
   // トークンの残存時間を超えてキャッシュしない
   var ttl = Math.min(CONST.TOKEN_CACHE_SEC, Math.floor(remainMs / 1000) - 10);
   if (ttl > 0) cache.put(cacheKey, JSON.stringify(user), ttl);
+  lap_('token(fetch)');
 
   return user;
 }
@@ -91,12 +106,18 @@ function isGroupMember_(email) {
   var lower = String(email).toLowerCase();
 
   // 個別許可リスト（任意設定）
-  if (cfgExtraAllowedEmails_().indexOf(lower) !== -1) return true;
+  if (cfgExtraAllowedEmails_().indexOf(lower) !== -1) {
+    lap_('group(extra)');
+    return true;
+  }
 
   var cache = CacheService.getScriptCache();
   var key = 'grp:' + lower;
   var cached = cache.get(key);
-  if (cached !== null) return cached === '1';
+  if (cached !== null) {
+    lap_('group(cache)');
+    return cached === '1';
+  }
 
   var member = false;
   try {
@@ -115,6 +136,7 @@ function isGroupMember_(email) {
   }
 
   cache.put(key, member ? '1' : '0', CONST.GROUP_CACHE_SEC);
+  lap_('group(lookup)');
   return member;
 }
 

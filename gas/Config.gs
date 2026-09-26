@@ -22,9 +22,18 @@ var CONST = {
     'log_id', 'timestamp', 'item_id', 'user_email',
     'action_type', 'before_state', 'after_state'
   ],
+  /**
+   * アプリが使う追加の列（PLAN-2）。無ければ書き込みのときに末尾へ足す（既存のシートはそのまま使える）。
+   * op_ids: その備品の行に書き込んだ操作の記録（空白区切り。履歴に残ったものから古い順に消す。Op.gs）。
+   * op_id: その履歴を追記した操作（logs の 8 列目に置く）
+   */
+  ITEM_EXTRA_HEADERS: ['op_ids'],
+  LOG_EXTRA_HEADERS: ['op_id'],
 
   /** 在庫ステータスの許容値（これ以外は弾く） */
   STOCK_STATUSES: ['余裕あり', '残りわずか', '在庫なし'],
+  /** 「要補充」の絞り込み（getItems の restock）で出す在庫ステータス（PLAN-2 項目 5） */
+  RESTOCK_STATUSES: ['残りわずか', '在庫なし'],
 
   /** 操作種別 */
   ACTION_CREATE: 'CREATE',
@@ -38,6 +47,8 @@ var CONST = {
   TOKEN_CACHE_SEC: 300,
   /** グループ所属判定のキャッシュ秒数 */
   GROUP_CACHE_SEC: 600,
+  /** 読み取り用の備品・履歴キャッシュの秒数（変更トリガーが無い・動かなかったときも、シートの直接編集はこの秒数以内に反映される） */
+  ITEMS_CACHE_SEC: 300,
 
   /** アップロード写真の上限（デコード後バイト数） */
   MAX_PHOTO_BYTES: 6 * 1024 * 1024,

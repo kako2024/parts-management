@@ -15,6 +15,15 @@ var ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
  * @return {string} 表示用 URL
  */
 function savePhoto_(photo, itemId, userEmail) {
+  return storePhoto_(preparePhoto_(photo), itemId, userEmail);
+}
+
+/**
+ * 写真を検証して復号する（Drive にはまだ保存しない）。形式・大きさの誤りはここで弾くので、
+ * シートに書き込む前に呼べば、写真の誤りで備品だけが登録されることはない。
+ * @return {{bytes: Array, mime: string, ext: string}}
+ */
+function preparePhoto_(photo) {
   if (!photo || !photo.data) {
     throw new ApiError_('PHOTO_INVALID', '画像データが空です。', 400);
   }
@@ -41,8 +50,16 @@ function savePhoto_(photo, itemId, userEmail) {
   }
 
   var ext = mime === 'image/png' ? 'png' : (mime === 'image/webp' ? 'webp' : 'jpg');
-  var name = itemId + '_' + Utilities.formatDate(new Date(), CONST.TIMEZONE, 'yyyyMMdd_HHmmss') + '.' + ext;
-  var blob = Utilities.newBlob(bytes, mime, name);
+  return { bytes: bytes, mime: mime, ext: ext };
+}
+
+/**
+ * preparePhoto_ で検証した写真を Drive に保存する。
+ * @return {string} 表示用 URL
+ */
+function storePhoto_(prepared, itemId, userEmail) {
+  var name = itemId + '_' + Utilities.formatDate(new Date(), CONST.TIMEZONE, 'yyyyMMdd_HHmmss') + '.' + prepared.ext;
+  var blob = Utilities.newBlob(prepared.bytes, prepared.mime, name);
 
   var folder = DriveApp.getFolderById(cfgPhotoFolderId_());
   var file = folder.createFile(blob);
@@ -57,6 +74,7 @@ function savePhoto_(photo, itemId, userEmail) {
     console.warn('setSharing failed (組織ポリシーの可能性): ' + e.message);
   }
 
+  lap_('savePhoto');
   return 'https://lh3.googleusercontent.com/d/' + file.getId();
 }
 

@@ -45,8 +45,9 @@ function initProperties() {
 function initSpreadsheet() {
   var book = SpreadsheetApp.openById(cfgSpreadsheetId_());
 
-  ensureSheet_(book, CONST.SHEET_ITEMS, CONST.ITEM_HEADERS);
-  ensureSheet_(book, CONST.SHEET_LOGS, CONST.LOG_HEADERS);
+  // アプリが使う追加の列（ITEM_EXTRA_HEADERS など）も並べる。既存のシートには不足分を末尾に足す
+  ensureSheet_(book, CONST.SHEET_ITEMS, CONST.ITEM_HEADERS.concat(CONST.ITEM_EXTRA_HEADERS));
+  ensureSheet_(book, CONST.SHEET_LOGS, CONST.LOG_HEADERS.concat(CONST.LOG_EXTRA_HEADERS));
 
   // items シートに入力規則（在庫ステータス）を付ける
   var items = book.getSheetByName(CONST.SHEET_ITEMS);
@@ -88,6 +89,20 @@ function ensureSheet_(book, name, headers) {
   } else {
     console.log(name + ': ヘッダーは正常です。');
   }
+}
+
+/**
+ * ステップ 2.5（推奨）: スプレッドシートを直接編集した内容が、すぐアプリに出るようにする。
+ * シートが変更されるたびに onSheetChange（Repository.gs）が呼ばれるトリガーを登録する。
+ * 何度実行してもトリガーは 1 つだけになる。初回は「スクリプトのトリガーの管理」の承認を求められる。
+ * 登録しなくても動くが、直接の編集は最大 CONST.ITEMS_CACHE_SEC 秒（5 分）遅れて出る。
+ */
+function installSheetTrigger() {
+  ScriptApp.getProjectTriggers().forEach(function (tr) {
+    if (tr.getHandlerFunction() === 'onSheetChange') ScriptApp.deleteTrigger(tr);
+  });
+  ScriptApp.newTrigger('onSheetChange').forSpreadsheet(cfgSpreadsheetId_()).onChange().create();
+  console.log('変更トリガーを登録しました。');
 }
 
 /**
@@ -136,6 +151,12 @@ function diagnose() {
     }
     return me + ' -> ' + (isGroupMember_(me) ? 'メンバー' : '非メンバー(!)');
   });
+  check('変更トリガー（任意）', function () {
+    var n = ScriptApp.getProjectTriggers().filter(function (tr) {
+      return tr.getHandlerFunction() === 'onSheetChange';
+    }).length;
+    return n ? '登録済み' : '未登録（installSheetTrigger を実行すると、シートの直接編集がすぐ反映される）';
+  });
   check('GOOGLE_CLIENT_ID の形式', function () {
     var id = cfgClientId_();
     if (!/\.apps\.googleusercontent\.com$/.test(id)) throw new Error('形式が不正です: ' + id);
@@ -178,5 +199,6 @@ function seedSampleItems() {
     var created = insertItem_(s, me);
     appendLog_(created.item_id, me, CONST.ACTION_CREATE, '', s);
   });
+  commitCacheVersions_(); // 読み取り用キャッシュに投入分を反映させる
   console.log('サンプルを投入しました。');
 }
