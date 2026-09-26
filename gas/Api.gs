@@ -29,6 +29,7 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  var startedAt = Date.now(); // 計測（debugTiming）の起点。解析前から計る
   try {
     if (!e || !e.postData || !e.postData.contents) {
       throw new ApiError_('BAD_REQUEST', 'リクエストボディが空です。', 400);
@@ -41,6 +42,9 @@ function doPost(e) {
       throw new ApiError_('BAD_REQUEST', 'リクエストの JSON を解析できませんでした。', 400);
     }
 
+    timingStart_(req.debugTiming === true, startedAt);
+    lap_('parse');
+
     var action = req.action;
     var payload = req.payload || {};
     if (!action) throw new ApiError_('BAD_REQUEST', 'action が指定されていません。', 400);
@@ -49,7 +53,7 @@ function doPost(e) {
     var user = authenticate_(req.idToken);
 
     switch (action) {
-      case 'loginCheck':   return okRes_(actLoginCheck_(user));
+      case 'loginCheck':   return okRes_(actLoginCheck_(user, payload));
       case 'getItems':     return okRes_(actGetItems_(payload));
       case 'getItem':      return okRes_(actGetItem_(payload));
       case 'createItem':   return okRes_(withLock_(function () { return actCreateItem_(payload, user); }));
@@ -71,10 +75,15 @@ function withLock_(fn) {
   if (!lock.tryLock(CONST.LOCK_WAIT_MS)) {
     throw new ApiError_('BUSY', '他の更新処理と競合しました。少し待って再試行してください。', 503);
   }
+  lap_('lock');
   try {
     return fn();
   } finally {
-    lock.releaseLock();
+    try {
+      commitCacheVersions_(); // 書き込みを確定させてから読み取り用キャッシュの版を変える
+    } finally {
+      lock.releaseLock();
+    }
   }
 }
 
@@ -82,12 +91,18 @@ function withLock_(fn) {
  * 各アクション
  * =======================================================*/
 
-/** ログイン可否とユーザー情報、およびフォーム用のマスタ候補を返す */
-function actLoginCheck_(user) {
+/**
+ * ログイン可否とユーザー情報、およびフォーム用のマスタ候補を返す。
+ * payload.withItems が真なら、getItems と同じ絞り込み（payload.filters）をかけた一覧も返す。
+ * 起動時に loginCheck → getItems と直列に 2 回呼ぶ待ちと、シートの二重読み込みをなくすため。
+ */
+function actLoginCheck_(user, payload) {
+  payload = payload || {};
   var items = listItems_(false);
+  lap_('listItems');
   var categories = uniqueSorted_(items.map(function (i) { return i.category; }));
   var locations = uniqueSorted_(items.map(function (i) { return i.location; }));
-  return {
+  var res = {
     user: { email: user.email, name: user.name, picture: user.picture },
     stockStatuses: CONST.STOCK_STATUSES,
     categories: categories,
@@ -95,6 +110,12 @@ function actLoginCheck_(user) {
     itemCount: items.length,
     serverTime: nowString_()
   };
+  if (payload.withItems) {
+    var list = filterAndSortItems_(items, payload.filters || {});
+    res.items = list.items;
+    res.total = list.total;
+  }
+  return res;
 }
 
 function uniqueSorted_(arr) {
@@ -114,8 +135,11 @@ function uniqueSorted_(arr) {
  * payload: { keyword?, category?, location?, stock_status?, includeDeleted? }
  */
 function actGetItems_(payload) {
-  var items = listItems_(!!payload.includeDeleted);
+  return filterAndSortItems_(listItems_(!!payload.includeDeleted), payload);
+}
 
+/** 一覧の絞り込み（keyword / category / location / stock_status）と更新日時の降順並べ替え */
+function filterAndSortItems_(items, payload) {
   var kw = sanitizeText_(payload.keyword, 100).toLowerCase();
   var cat = sanitizeText_(payload.category, 60);
   var loc = sanitizeText_(payload.location, 120);
@@ -145,12 +169,12 @@ function actGetItem_(payload) {
   var itemId = sanitizeText_(payload.item_id, 64);
   if (!itemId) throw new ApiError_('BAD_REQUEST', 'item_id は必須です。', 400);
 
-  var found = findItem_(itemId);
-  if (!found.item || found.item.is_deleted) {
+  var item = findItemForRead_(itemId);
+  if (!item || item.is_deleted) {
     throw new ApiError_('ITEM_NOT_FOUND', '備品 "' + itemId + '" は登録されていません。', 404);
   }
-  var res = { item: stripInternal_(found.item) };
-  if (payload.withLogs) res.logs = readLogs_(itemId, 30);
+  var res = { item: item };
+  if (payload.withLogs) res.logs = readItemLogs_(itemId, 30);
   return res;
 }
 
@@ -189,7 +213,7 @@ function actCreateItem_(payload, user) {
     created.photo_url = url;
   }
 
-  appendLog_(created.item_id, user.email, CONST.ACTION_CREATE, '', {
+  var log = appendLog_(created.item_id, user.email, CONST.ACTION_CREATE, '', {
     name: created.name,
     category: created.category,
     location: created.location,
@@ -197,7 +221,7 @@ function actCreateItem_(payload, user) {
     quantity: created.quantity
   });
 
-  return { item: created };
+  return { item: created, log: log };
 }
 
 /**
@@ -227,12 +251,12 @@ function actUpdateStatus_(payload, user) {
 
   var updated = updateItemRow_(found.item, patch, found.ctx, user.email);
 
-  appendLog_(itemId, user.email, CONST.ACTION_UPDATE_STATUS, before, {
+  var log = appendLog_(itemId, user.email, CONST.ACTION_UPDATE_STATUS, before, {
     stock_status: updated.stock_status,
     quantity: updated.quantity
   });
 
-  return { item: updated };
+  return { item: updated, log: log };
 }
 
 /**
@@ -277,9 +301,9 @@ function actUpdateItem_(payload, user) {
 
   var beforeDiff = {};
   Object.keys(patch).forEach(function (k) { beforeDiff[k] = before[k]; });
-  appendLog_(itemId, user.email, CONST.ACTION_UPDATE, beforeDiff, patch);
+  var log = appendLog_(itemId, user.email, CONST.ACTION_UPDATE, beforeDiff, patch);
 
-  return { item: updated };
+  return { item: updated, log: log };
 }
 
 /** 論理削除。payload: { item_id } */
@@ -296,9 +320,9 @@ function actDeleteItem_(payload, user) {
   }
 
   var updated = updateItemRow_(found.item, { is_deleted: true }, found.ctx, user.email);
-  appendLog_(itemId, user.email, CONST.ACTION_DELETE, { is_deleted: false }, { is_deleted: true });
+  var log = appendLog_(itemId, user.email, CONST.ACTION_DELETE, { is_deleted: false }, { is_deleted: true });
 
-  return { item: updated };
+  return { item: updated, log: log };
 }
 
 /** 履歴取得。payload: { item_id?, limit? } */

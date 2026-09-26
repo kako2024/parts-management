@@ -57,6 +57,7 @@ function savePhoto_(photo, itemId, userEmail) {
     console.warn('setSharing failed (組織ポリシーの可能性): ' + e.message);
   }
 
+  lap_('savePhoto');
   return 'https://lh3.googleusercontent.com/d/' + file.getId();
 }
 

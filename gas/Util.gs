@@ -18,8 +18,34 @@ function ApiError_(code, message, status) {
   return e;
 }
 
+/* =========================================================
+ * 処理時間の計測（PERF.md の内訳計測用）
+ * リクエストに debugTiming: true があるときだけ区間ごとの ms を記録し、
+ * レスポンスの timing に載せる。無いときは何もしない。
+ * =======================================================*/
+
+var TIMING_ = null;
+
+/** @param {number} t0 計測の起点（doPost に入った時刻） */
+function timingStart_(enabled, t0) {
+  TIMING_ = enabled ? { t0: t0, last: t0, laps: [] } : null;
+}
+
+/** 前回の lap_ からの経過を label として記録する */
+function lap_(label) {
+  if (!TIMING_) return;
+  var now = Date.now();
+  TIMING_.laps.push(label + '=' + (now - TIMING_.last));
+  TIMING_.last = now;
+}
+
 /** JSON レスポンスを組み立てる */
 function jsonOut_(obj) {
+  if (TIMING_) {
+    lap_('rest');
+    obj.timing = { total: Date.now() - TIMING_.t0, laps: TIMING_.laps.join(' ') };
+    TIMING_ = null;
+  }
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);

@@ -178,5 +178,6 @@ function seedSampleItems() {
     var created = insertItem_(s, me);
     appendLog_(created.item_id, me, CONST.ACTION_CREATE, '', s);
   });
+  commitCacheVersions_(); // 読み取り用キャッシュに投入分を反映させる
   console.log('サンプルを投入しました。');
 }

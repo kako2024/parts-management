@@ -84,6 +84,7 @@ const sandbox = {
 
   SpreadsheetApp: {
     openById: () => BOOK,
+    flush: () => {},
     newDataValidation: () => ({
       requireValueInList: function () { return this; },
       setAllowInvalid: function () { return this; },
@@ -99,7 +100,17 @@ const sandbox = {
   CacheService: {
     getScriptCache: () => ({
       get: (k) => (cacheStore[k] === undefined ? null : cacheStore[k]),
-      put: (k, v) => { cacheStore[k] = v; }
+      put: (k, v) => {
+        if (Buffer.byteLength(String(v)) > 100 * 1024) throw new Error('Argument too large: value'); // 本物の上限
+        cacheStore[k] = String(v);
+      },
+      getAll: (keys) => { const o = {}; keys.forEach(k => { if (cacheStore[k] !== undefined) o[k] = cacheStore[k]; }); return o; },
+      putAll: (o) => { Object.keys(o).forEach(k => {
+        if (Buffer.byteLength(String(o[k])) > 100 * 1024) throw new Error('Argument too large: value');
+        cacheStore[k] = String(o[k]);
+      }); },
+      remove: (k) => { delete cacheStore[k]; },
+      removeAll: (keys) => { keys.forEach(k => { delete cacheStore[k]; }); }
     })
   },
   LockService: {
@@ -114,6 +125,7 @@ const sandbox = {
   DriveApp: {
     Access: { ANYONE_WITH_LINK: 'anyone' },
     Permission: { VIEW: 'view' },
+    getRootFolder: () => ({ getName: () => 'マイドライブ(mock)' }),
     getFolderById: () => ({
       getName: () => '備品写真(mock)',
       createFile: (blob) => {
@@ -156,7 +168,8 @@ const sandbox = {
     base64Encode: (b) => Buffer.from(b).toString('base64'),
     base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64url'),
     base64Decode: (s) => Array.from(Buffer.from(s, 'base64')),
-    newBlob: (bytes, mime, name) => ({ bytes, mime, name })
+    newBlob: (bytes, mime, name) => ({ bytes, mime, name }),
+    getUuid: () => require('crypto').randomUUID()
   }
 };
 sandbox.globalThis = sandbox;
@@ -363,6 +376,18 @@ t('loginCheck がカテゴリ・場所の候補を返す', () => {
   eq(r.data.stockStatuses, ['余裕あり', '残りわずか', '在庫なし']);
 });
 
+t('loginCheck は withItems のときだけ getItems と同じ一覧を返す', () => {
+  const plain = post('loginCheck', {}, 'T1');
+  assert(plain.ok && plain.data.items === undefined, '既定で一覧を返している');
+  const both = post('loginCheck', { withItems: true, filters: {} }, 'T1');
+  const list = post('getItems', {}, 'T1');
+  assert(both.ok && list.ok, JSON.stringify(both));
+  eq(both.data.items, list.data.items, '全件の一覧が getItems と違う');
+  eq(both.data.total, list.data.total);
+  const f = { stock_status: '在庫なし' };
+  eq(post('loginCheck', { withItems: true, filters: f }, 'T1').data.items, post('getItems', f, 'T1').data.items, '絞り込みが getItems と違う');
+});
+
 t('未知の action は 400', () => {
   const r = post('dropTable', {}, 'T1');
   assert(!r.ok && r.error.code === 'UNKNOWN_ACTION', JSON.stringify(r));
@@ -372,6 +397,185 @@ t('壊れた JSON でも 500 にならず整形されたエラーを返す', () 
   const out = ctx.doPost({ postData: { contents: '{broken' } });
   const r = JSON.parse(out.getContent());
   assert(!r.ok && r.error.code === 'BAD_REQUEST', JSON.stringify(r));
+});
+
+t('debugTiming 指定時だけ処理時間の内訳を返す', () => {
+  const plain = post('getItems', {}, 'T1');
+  assert(plain.ok && plain.timing === undefined, JSON.stringify(plain.timing));
+  const out = ctx.doPost({
+    postData: { contents: JSON.stringify({ action: 'getItems', idToken: 'T1', payload: {}, debugTiming: true }) }
+  });
+  const r = JSON.parse(out.getContent());
+  assert(r.ok && typeof r.timing.total === 'number', JSON.stringify(r.timing));
+  assert(/token\(cache\)=\d+/.test(r.timing.laps) && /(readItems\(\d+rows\)|items\(cache\))=\d+/.test(r.timing.laps), r.timing.laps);
+});
+
+t('計測用の認証省略は perfBypassUser_ があるときだけ働き、グループ判定は省かない', () => {
+  tokenInfoResponse = null; // tokeninfo は常に失敗させる
+  const before = post('getItems', {}, 'PERF-TOKEN-1');
+  assert(!before.ok && before.error.status === 401, '定義前に通った: ' + JSON.stringify(before));
+
+  ctx.perfBypassUser_ = (tok) => tok.startsWith('PERF-TOKEN') ? { email: tok === 'PERF-TOKEN-2' ? 'x@example.com' : 'taro@example.com', name: '計測用', picture: '', sub: 'perf' } : null;
+  try {
+    const ok = post('getItems', {}, 'PERF-TOKEN-3');
+    assert(ok.ok, JSON.stringify(ok));
+    const other = post('getItems', {}, 'PERF-TOKEN-2');
+    assert(!other.ok && other.error.code === 'FORBIDDEN_NOT_MEMBER', 'グループ外が通った: ' + JSON.stringify(other));
+    const wrong = post('getItems', {}, 'NOT-PERF');
+    assert(!wrong.ok && wrong.error.status === 401, '一致しないトークンが通った: ' + JSON.stringify(wrong));
+  } finally {
+    delete ctx.perfBypassUser_;
+  }
+  // 撤去した直後から、一度通ったトークンも通らない（キャッシュに残さない）
+  const after = post('getItems', {}, 'PERF-TOKEN-3');
+  assert(!after.ok && after.error.status === 401, '撤去後に通った: ' + JSON.stringify(after));
+  tokenInfoResponse = validToken('taro@example.com');
+});
+
+/* ---------- 読み取り用キャッシュ（PERF.md 項目 5） ---------- */
+const itemsSheet = () => BOOK.getSheetByName('items');
+const timed = (action, payload) => JSON.parse(ctx.doPost({
+  postData: { contents: JSON.stringify({ action, idToken: 'T1', payload, debugTiming: true }) }
+}).getContent());
+
+t('一覧・単票の 2 回目はシートを読まずにキャッシュから返す', () => {
+  post('getItems', {}, 'T1');
+  const r = timed('getItems', {});
+  assert(r.ok && /items\(cache\)/.test(r.timing.laps) && !/readItems/.test(r.timing.laps), r.timing.laps);
+  const one = timed('getItem', { item_id: 'ITEM-0001', withLogs: true });
+  assert(one.ok && /items\(cache\)/.test(one.timing.laps), one.timing.laps);
+});
+
+t('書き込みの直後は一覧・単票・履歴に最新が出る（キャッシュを捨てる）', () => {
+  post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1');
+  const before = post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1').data;
+  const next = before.item.stock_status === '在庫なし' ? '余裕あり' : '在庫なし';
+  assert(post('updateStatus', { item_id: 'ITEM-0001', stock_status: next }, 'T1').ok);
+  const after = post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1').data;
+  eq(after.item.stock_status, next, '単票が古い');
+  eq(after.logs.length, Math.min(before.logs.length + 1, 30), '履歴が増えていない');
+  eq(after.logs[0].action_type, 'UPDATE_STATUS');
+  const listed = post('getItems', {}, 'T1').data.items.find(i => i.item_id === 'ITEM-0001');
+  eq(listed.stock_status, next, '一覧が古い');
+  const created = post('createItem', { name: 'キャッシュ確認用' }, 'T1').data.item;
+  assert(post('getItems', {}, 'T1').data.items.some(i => i.item_id === created.item_id), '登録が一覧に出ない');
+  assert(post('deleteItem', { item_id: created.item_id }, 'T1').ok);
+  assert(!post('getItems', {}, 'T1').data.items.some(i => i.item_id === created.item_id), '削除が一覧に反映されない');
+});
+
+t('シートを直接編集した分は、キャッシュが切れるまで出ない（切れれば出る）', () => {
+  post('getItems', {}, 'T1');
+  const row = itemsSheet()._data.find(r2 => r2[0] === 'ITEM-0001');
+  const col = ctx.CONST.ITEM_HEADERS.indexOf('note');
+  const old = row[col];
+  row[col] = '直接編集';
+  try {
+    assert(post('getItem', { item_id: 'ITEM-0001' }, 'T1').data.item.note !== '直接編集', 'キャッシュを使っていない');
+    delete cacheStore['items:v2:ver'];        // 期限切れの代わり（版が切れれば写しは使われない）
+    eq(post('getItem', { item_id: 'ITEM-0001' }, 'T1').data.item.note, '直接編集');
+  } finally {
+    row[col] = old;
+    delete cacheStore['items:v2:ver'];
+  }
+});
+
+t('キャッシュの上限（1 件 100KB）を超える一覧も分割して保存・復元できる', () => {
+  const sheet = itemsSheet();
+  const base = sheet._data.length;
+  const H = ctx.CONST.ITEM_HEADERS;
+  for (let i = 0; i < 400; i++) {
+    const r2 = H.map(() => '');
+    r2[H.indexOf('item_id')] = 'BULK-' + i;
+    r2[H.indexOf('name')] = '全角の長い名前'.repeat(20) + i;   // 1 件あたり約 400 バイト
+    r2[H.indexOf('is_deleted')] = false;
+    sheet._data.push(r2);
+  }
+  delete cacheStore['items:v2:ver'];
+  try {
+    const first = post('getItems', { keyword: 'BULK' }, 'T1');
+    eq(first.data.total, 400);
+    const head = cacheStore['items:v2:' + cacheStore['items:v2:ver']];
+    assert(Number(head) > 1, '分割されていない: ' + head);
+    const second = timed('getItems', { keyword: 'BULK' });
+    assert(/items\(cache\)/.test(second.timing.laps), second.timing.laps);
+    eq(second.data.items, first.data.items, '復元した一覧が違う');
+  } finally {
+    sheet._data.splice(base);
+    delete cacheStore['items:v2:ver'];
+  }
+});
+
+/**
+ * シートの全体読み込み（getDataRange().getValues()）の直後に、1 度だけ during() を割り込ませる。
+ * 読み取りが古い内容を持ったまま、その間に書き込みが終わる状況を作る。
+ */
+function interleaveAfterRead(sheet, during) {
+  const orig = sheet.getDataRange;
+  sheet.getDataRange = () => ({
+    getValues: () => {
+      const values = orig().getValues();
+      sheet.getDataRange = orig;               // 割り込ませるのは 1 度だけ（書き込み側の読み込みは素通し）
+      during();
+      return values;
+    }
+  });
+  return () => { sheet.getDataRange = orig; };
+}
+
+t('一覧を読み直している途中に更新が入っても、古い一覧を写しとして使い続けない', () => {
+  delete cacheStore['items:v2:ver'];          // 写しが無い状態から読み直させる
+  const cur = post('getItem', { item_id: 'ITEM-0001' }, 'T1');   // この読み込みで写しができる
+  delete cacheStore['items:v2:ver'];
+  const next = cur.data.item.stock_status === '在庫なし' ? '余裕あり' : '在庫なし';
+  const restore = interleaveAfterRead(itemsSheet(), () => {
+    assert(post('updateStatus', { item_id: 'ITEM-0001', stock_status: next }, 'T1').ok, '割り込みの更新に失敗');
+  });
+  try {
+    const during = post('getItems', {}, 'T1');   // 更新前の内容を読んだ読み取り
+    assert(during.ok, JSON.stringify(during));
+  } finally { restore(); }
+  eq(post('getItem', { item_id: 'ITEM-0001' }, 'T1').data.item.stock_status, next, '単票が古いまま');
+  eq(post('getItems', {}, 'T1').data.items.find(i => i.item_id === 'ITEM-0001').stock_status, next, '一覧が古いまま');
+});
+
+t('履歴を読み直している途中に追記されても、古い履歴を写しとして使い続けない', () => {
+  const before = post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1').data;
+  delete cacheStore['logs:v2:ITEM-0001:ver'];  // 履歴の写しが無い状態にする
+  const next = before.item.stock_status === '在庫なし' ? '余裕あり' : '在庫なし';
+  const restore = interleaveAfterRead(BOOK.getSheetByName('logs'), () => {
+    assert(post('updateStatus', { item_id: 'ITEM-0001', stock_status: next }, 'T1').ok, '割り込みの更新に失敗');
+  });
+  try {
+    assert(post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1').ok);
+  } finally { restore(); }
+  const after = post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1').data;
+  eq(after.logs[0].action_type, 'UPDATE_STATUS');
+  assert(after.logs[0].after_state.indexOf(next) !== -1, '最新の履歴が出ない: ' + after.logs[0].after_state);
+});
+
+t('更新系の API は追記した履歴を返し、それは次に取得する履歴の先頭と同じ', () => {
+  const cur = post('getItem', { item_id: 'ITEM-0001' }, 'T1').data.item;
+  const next = cur.stock_status === '在庫なし' ? '余裕あり' : '在庫なし';
+  const st = post('updateStatus', { item_id: 'ITEM-0001', stock_status: next }, 'T1').data;
+  eq(st.log, post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1').data.logs[0], 'updateStatus');
+  const up = post('updateItem', { item_id: 'ITEM-0001', note: '履歴の確認' }, 'T1').data;
+  eq(up.log, post('getItem', { item_id: 'ITEM-0001', withLogs: true }, 'T1').data.logs[0], 'updateItem');
+  const cr = post('createItem', { name: '履歴の確認用' }, 'T1').data;
+  eq(cr.log, post('getItem', { item_id: cr.item.item_id, withLogs: true }, 'T1').data.logs[0], 'createItem');
+  const del = post('deleteItem', { item_id: cr.item.item_id }, 'T1').data;
+  eq(del.log.action_type, 'DELETE');
+});
+
+t('履歴の採番は覚えた連番を使い、忘れてもシートから続きを取る', () => {
+  const ids = [];
+  for (let i = 0; i < 2; i++) {
+    post('updateStatus', { item_id: 'ITEM-0001', stock_status: i % 2 ? '余裕あり' : '残りわずか' }, 'T1');
+  }
+  Object.keys(cacheStore).filter(k => k.startsWith('logseq:')).forEach(k => delete cacheStore[k]); // 忘れさせる
+  post('updateStatus', { item_id: 'ITEM-0001', stock_status: '在庫なし' }, 'T1');
+  const all = BOOK.getSheetByName('logs')._data.slice(1).map(r2 => r2[0]);
+  eq(new Set(all).size, all.length, 'log_id が重複: ' + all.join(','));
+  all.forEach(id => assert(/^LOG-\d{8}-\d{3}$/.test(id), '形式不正: ' + id));
 });
 
 t('doGet が疎通確認 JSON を返す', () => {

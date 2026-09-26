@@ -1,0 +1,303 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+  "items": 2,
+  "photos": 2,
+  "rounds": 5,
+  "login": "認証省略",
+  "at": "2026-09-26T09:07:25.882Z"
+ },
+ "results": [
+  {
+   "phase": "Aキャッシュなし-1",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 781,
+   "marks": "dcl=0 load=0 credential(bypass)=778 cache=778",
+   "note": "",
+   "at": "2026-09-26T09:07:16.925Z"
+  },
+  {
+   "phase": "Aキャッシュなし-1",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 346,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T09:07:17.272Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:17.463Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 317,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:17.780Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:18.029Z"
+  },
+  {
+   "phase": "B-1（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 0,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:18.029Z"
+  },
+  {
+   "phase": "Aキャッシュなし-2",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 743,
+   "marks": "dcl=0 load=0 credential(bypass)=740 cache=740",
+   "note": "",
+   "at": "2026-09-26T09:07:18.837Z"
+  },
+  {
+   "phase": "Aキャッシュなし-2",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 324,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T09:07:19.162Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 3,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:19.388Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 439,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:19.827Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:20.052Z"
+  },
+  {
+   "phase": "B-2（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 0,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:20.053Z"
+  },
+  {
+   "phase": "Aキャッシュなし-3",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 793,
+   "marks": "dcl=0 load=0 credential(bypass)=790 cache=790",
+   "note": "",
+   "at": "2026-09-26T09:07:20.964Z"
+  },
+  {
+   "phase": "Aキャッシュなし-3",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 336,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T09:07:21.301Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:21.499Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 336,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:21.836Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "API loginCheck",
+   "ms": 1011,
+   "marks": "gas=140 parse=1 token(bypass)=21 group(cache)=43 items(cache)=47 listItems=0 rest=28",
+   "note": "",
+   "at": "2026-09-26T09:07:21.977Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:22.081Z"
+  },
+  {
+   "phase": "B-3（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 0,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:22.082Z"
+  },
+  {
+   "phase": "Aキャッシュなし-4",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 734,
+   "marks": "dcl=0 load=0 credential(bypass)=732 cache=732",
+   "note": "",
+   "at": "2026-09-26T09:07:22.878Z"
+  },
+  {
+   "phase": "Aキャッシュなし-4",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 369,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T09:07:23.248Z"
+  },
+  {
+   "phase": "B-4",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:23.414Z"
+  },
+  {
+   "phase": "B-4",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 343,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:23.757Z"
+  },
+  {
+   "phase": "B-4",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 1,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:23.951Z"
+  },
+  {
+   "phase": "B-4（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 0,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:23.952Z"
+  },
+  {
+   "phase": "Aキャッシュなし-5",
+   "cache": "なし",
+   "scene": "API loginCheck",
+   "ms": 1188,
+   "marks": "gas=210 parse=4 token(bypass)=38 group(cache)=46 items(cache)=65 listItems=2 rest=55",
+   "note": "",
+   "at": "2026-09-26T09:07:24.067Z"
+  },
+  {
+   "phase": "Aキャッシュなし-5",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 736,
+   "marks": "dcl=0 load=0 credential(bypass)=734 cache=734",
+   "note": "",
+   "at": "2026-09-26T09:07:24.774Z"
+  },
+  {
+   "phase": "Aキャッシュなし-5",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 303,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T09:07:25.078Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:25.281Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 347,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:25.628Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 1,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T09:07:25.820Z"
+  },
+  {
+   "phase": "B-5（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 0,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T09:07:25.820Z"
+  }
+ ],
+ "problems": [],
+ "warnings": [],
+ "leftovers": []
+}
