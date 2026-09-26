@@ -47,7 +47,8 @@ input, select, textarea, button {
 }
 .chip-select:focus,
 .chip-btn:focus { outline: 2px solid #0f172a; outline-offset: 1px; }
-.chip-select.active { border-color: #0f172a; background: #0f172a; color: #fff; }
+.chip-select.active,
+.chip-btn.active { border-color: #0f172a; background: #0f172a; color: #fff; }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

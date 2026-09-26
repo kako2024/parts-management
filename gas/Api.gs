@@ -30,6 +30,8 @@ function doGet(e) {
 
 function doPost(e) {
   var startedAt = Date.now(); // 計測（debugTiming）の起点。解析前から計る
+  WRITE_STARTED_ = false;
+  forgetItemsMemo_();
   try {
     if (!e || !e.postData || !e.postData.contents) {
       throw new ApiError_('BAD_REQUEST', 'リクエストボディが空です。', 400);
@@ -56,10 +58,10 @@ function doPost(e) {
       case 'loginCheck':   return okRes_(actLoginCheck_(user, payload));
       case 'getItems':     return okRes_(actGetItems_(payload));
       case 'getItem':      return okRes_(actGetItem_(payload));
-      case 'createItem':   return okRes_(withLock_(function () { return actCreateItem_(payload, user); }));
-      case 'updateStatus': return okRes_(withLock_(function () { return actUpdateStatus_(payload, user); }));
-      case 'updateItem':   return okRes_(withLock_(function () { return actUpdateItem_(payload, user); }));
-      case 'deleteItem':   return okRes_(withLock_(function () { return actDeleteItem_(payload, user); }));
+      case 'createItem':   return okRes_(withLock_(function () { return runOp_(action, payload, user, actCreateItem_); }));
+      case 'updateStatus': return okRes_(withLock_(function () { return runOp_(action, payload, user, actUpdateStatus_); }));
+      case 'updateItem':   return okRes_(withLock_(function () { return runOp_(action, payload, user, actUpdateItem_); }));
+      case 'deleteItem':   return okRes_(withLock_(function () { return runOp_(action, payload, user, actDeleteItem_); }));
       case 'getLogs':      return okRes_(actGetLogs_(payload));
       default:
         throw new ApiError_('UNKNOWN_ACTION', '未知の action です: ' + action, 400);
@@ -132,23 +134,25 @@ function uniqueSorted_(arr) {
 
 /**
  * 一覧取得。
- * payload: { keyword?, category?, location?, stock_status?, includeDeleted? }
+ * payload: { keyword?, category?, location?, stock_status?, restock?, includeDeleted? }
  */
 function actGetItems_(payload) {
   return filterAndSortItems_(listItems_(!!payload.includeDeleted), payload);
 }
 
-/** 一覧の絞り込み（keyword / category / location / stock_status）と更新日時の降順並べ替え */
+/** 一覧の絞り込み（keyword / category / location / stock_status / restock）と更新日時の降順並べ替え */
 function filterAndSortItems_(items, payload) {
   var kw = sanitizeText_(payload.keyword, 100).toLowerCase();
   var cat = sanitizeText_(payload.category, 60);
   var loc = sanitizeText_(payload.location, 120);
   var st = sanitizeText_(payload.stock_status, 20);
+  var restock = payload.restock === true; // 要補充（残りわずか・在庫なし）だけ
 
   var filtered = items.filter(function (it) {
     if (cat && it.category !== cat) return false;
     if (loc && it.location !== loc) return false;
     if (st && it.stock_status !== st) return false;
+    if (restock && CONST.RESTOCK_STATUSES.indexOf(it.stock_status) === -1) return false;
     if (kw) {
       var hay = (it.item_id + ' ' + it.name + ' ' + it.category + ' ' +
                  it.location + ' ' + it.note).toLowerCase();
@@ -180,8 +184,12 @@ function actGetItem_(payload) {
 
 /**
  * 新規登録。
- * payload: { name, category, location, stock_status, quantity?, note?, item_id?, photo? }
+ * payload: { name, category, location, stock_status, quantity?, note?, item_id?, photo?, op_id?, op_attempt? }
  * photo: { data(base64), mimeType, filename }
+ *
+ * 備品の行 → 履歴 → 写真 の順に保存する。写真の形式・大きさは行を書く前に確かめる（誤りなら何も保存しない）。
+ * 写真を Drive に保存できなかったときは、備品は登録済みのまま成功を返し、photoError で知らせる
+ * （画面は写真だけを送り直せる。同じ操作 ID で送り直せば、写真の保存だけをもう一度試す。Op.gs）。
  */
 function actCreateItem_(payload, user) {
   var name = sanitizeText_(payload.name, 120);
@@ -189,6 +197,8 @@ function actCreateItem_(payload, user) {
 
   var status = sanitizeText_(payload.stock_status, 20) || CONST.STOCK_STATUSES[0];
   assertStockStatus_(status);
+
+  var photo = (payload.photo && payload.photo.data) ? preparePhoto_(payload.photo) : null;
 
   var input = {
     item_id: payload.item_id,
@@ -203,16 +213,6 @@ function actCreateItem_(payload, user) {
 
   var created = insertItem_(input, user.email);
 
-  // 写真は item_id 確定後に保存し、URL を書き戻す
-  if (payload.photo && payload.photo.data) {
-    var url = savePhoto_(payload.photo, created.item_id, user.email);
-    var again = findItem_(created.item_id);
-    if (again.item) {
-      updateItemRow_(again.item, { photo_url: url }, again.ctx, user.email);
-    }
-    created.photo_url = url;
-  }
-
   var log = appendLog_(created.item_id, user.email, CONST.ACTION_CREATE, '', {
     name: created.name,
     category: created.category,
@@ -221,12 +221,31 @@ function actCreateItem_(payload, user) {
     quantity: created.quantity
   });
 
-  return { item: created, log: log };
+  var res = { item: created, log: log };
+  if (photo) attachPhoto_(res, photo, user);
+  return res;
+}
+
+/**
+ * 登録済みの備品に写真を保存して URL を書き戻し、res.item を差し替える。
+ * 失敗しても例外にせず、res.photoError に理由を入れる（備品の登録は取り消さない）。
+ */
+function attachPhoto_(res, photo, user) {
+  var itemId = res.item.item_id;
+  try {
+    var url = storePhoto_(photo, itemId, user.email);
+    var again = findItem_(itemId);
+    if (!again.item) throw new Error('備品 "' + itemId + '" が見つかりません。');
+    res.item = updateItemRow_(again.item, { photo_url: url }, again.ctx, user.email);
+  } catch (e) {
+    console.error('photo save failed after create: ' + itemId + ' : ' + (e && e.message));
+    res.photoError = '写真を保存できませんでした（' + ((e && e.message) || e) + '）。';
+  }
 }
 
 /**
  * 在庫ステータスのみ更新（スマホでの主用途。QR を読んでボタン 1 タップ）。
- * payload: { item_id, stock_status, quantity?, note? }
+ * payload: { item_id, stock_status, quantity?, note?, base_version? }
  */
 function actUpdateStatus_(payload, user) {
   var itemId = sanitizeText_(payload.item_id, 64);
@@ -239,6 +258,7 @@ function actUpdateStatus_(payload, user) {
   if (!found.item || found.item.is_deleted) {
     throw new ApiError_('ITEM_NOT_FOUND', '備品 "' + itemId + '" は登録されていません。', 404);
   }
+  assertBaseVersion_(found.item, payload.base_version);
 
   var before = {
     stock_status: found.item.stock_status,
@@ -261,7 +281,7 @@ function actUpdateStatus_(payload, user) {
 
 /**
  * 備品情報の一般更新。
- * payload: { item_id, name?, category?, location?, stock_status?, quantity?, note?, photo? }
+ * payload: { item_id, name?, category?, location?, stock_status?, quantity?, note?, photo?, base_version? }
  */
 function actUpdateItem_(payload, user) {
   var itemId = sanitizeText_(payload.item_id, 64);
@@ -271,6 +291,7 @@ function actUpdateItem_(payload, user) {
   if (!found.item || found.item.is_deleted) {
     throw new ApiError_('ITEM_NOT_FOUND', '備品 "' + itemId + '" は登録されていません。', 404);
   }
+  assertBaseVersion_(found.item, payload.base_version); // 写真を Drive に保存する前に確かめる
 
   var before = stripInternal_(found.item);
   var patch = {};
@@ -306,7 +327,7 @@ function actUpdateItem_(payload, user) {
   return { item: updated, log: log };
 }
 
-/** 論理削除。payload: { item_id } */
+/** 論理削除。payload: { item_id, base_version? } */
 function actDeleteItem_(payload, user) {
   var itemId = sanitizeText_(payload.item_id, 64);
   if (!itemId) throw new ApiError_('BAD_REQUEST', 'item_id は必須です。', 400);
@@ -318,6 +339,7 @@ function actDeleteItem_(payload, user) {
   if (found.item.is_deleted) {
     return { item: stripInternal_(found.item), alreadyDeleted: true };
   }
+  assertBaseVersion_(found.item, payload.base_version);
 
   var updated = updateItemRow_(found.item, { is_deleted: true }, found.ctx, user.email);
   var log = appendLog_(itemId, user.email, CONST.ACTION_DELETE, { is_deleted: false }, { is_deleted: true });

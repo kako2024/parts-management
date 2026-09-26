@@ -24,6 +24,13 @@ let logs = [
 const apiCalls = []; // 呼ばれた action の順（起動時の呼び出し回数の検証用）
 const apiDelay = {};  // action ごとの応答の遅れ(ms)。キャッシュで API を待たずに表示できるかの検証用
 const apiDrop = {};
+const apiLose = {};   // action ごとに、処理した後で応答だけを失わせる回数（送り直しの検証用。Infinity なら消すまで失わせる）
+const opCalls = [];   // 操作 ID つきの送信 { action, op_id, op_attempt }
+const opResults = {}; // 操作 ID ごとの最初の結果（本物の GAS と同じく、送り直しは二重に実行しない）
+const lastPayload = {}; // action ごとに最後に受け取った payload（操作 ID を除く）
+let photoFail = false; // 登録で写真の保存だけを失敗させる
+const conflictNoItem = {}; // action ごとに、最新の備品なしの CONFLICT を返す（行が消えたときの GAS と同じ）
+let forbidden = false;     // 真なら、ログイン確認を 403（グループのメンバーではない）で断る
 const photoRequests = []; // /mockphoto/ への要求
 let photoDelay = 0;       // /mockphoto/ の応答の遅れ(ms)   // action ごとに接続を切って通信エラーにする（失敗時の後始末の検証用）
 /** 疑似 ID トークンの email（無ければ taro） */
@@ -42,12 +49,63 @@ function addLog(itemId, type, before, after) {
   logs.push(log);
   return log;
 }
+/** 備品の版（本物は gas/Repository.gs の itemVersion_）。検証が items を直接書き換えても変わる */
+const ITEM_FIELDS = ['item_id', 'name', 'category', 'location', 'stock_status', 'quantity', 'photo_url', 'note', 'updated_at', 'updated_by', 'is_deleted'];
+function versionOf(it) {
+  return require('crypto').createHash('sha1').update(JSON.stringify(ITEM_FIELDS.map(k => it[k] === undefined ? null : it[k]))).digest('hex').slice(0, 16);
+}
+function withVersion(it) { return it ? Object.assign({}, it, { version: versionOf(it) }) : it; }
+/** 応答の備品に版を付ける */
+function addVersions(res) {
+  const d = res.ok ? res.data : res.error && res.error.data;
+  if (d && d.item) d.item = withVersion(d.item);
+  if (d && d.items) d.items = d.items.map(withVersion);
+  return res;
+}
+/** 画面が読んだときの版と違えば、何もせずに CONFLICT（本物は assertBaseVersion_） */
+function conflictOf(it, payload) {
+  if (!payload.base_version || payload.base_version === versionOf(it)) return null;
+  return { ok: false, error: { code: 'CONFLICT', message: '他の人が先に更新していました', status: 409, data: { item: Object.assign({}, it) } } };
+}
+
+/** 操作 ID の扱い（gas/Op.gs と同じ振る舞いの簡易版）。済んだ操作の送り直しは最初の結果を返す */
 function handleApi(body) {
-  const { action, payload = {}, idToken } = JSON.parse(body);
+  return addVersions(handleApiInner(body));
+}
+function handleApiInner(body) {
+  const req = JSON.parse(body);
+  const payload = Object.assign({}, req.payload || {});
+  const opId = payload.op_id;
+  if (!opId) return handleAction(req.action, payload, req.idToken);
+  opCalls.push({ action: req.action, op_id: opId, op_attempt: payload.op_attempt });
+  delete payload.op_id;
+  delete payload.op_attempt;
+  const key = req.action + JSON.stringify(payload);
+  const done = opResults[opId];
+  if (done) {
+    apiCalls.push(req.action);
+    if (done.key !== key) {
+      return { ok: false, error: { code: 'OP_MISMATCH', message: 'この操作はすでに保存されています', status: 409, data: { item: done.result.data.item } } };
+    }
+    const data = Object.assign({}, done.result.data, { replayed: true });
+    if (req.action === 'createItem' && payload.photo && !data.item.photo_url && !photoFail) {
+      data.item.photo_url = 'https://lh3.googleusercontent.com/d/mock';
+      delete data.photoError;
+    }
+    return { ok: true, data };
+  }
+  const result = handleAction(req.action, payload, req.idToken);
+  if (result.ok) opResults[opId] = { key, result };
+  return result;
+}
+
+function handleAction(action, payload, idToken) {
   apiCalls.push(action);
+  lastPayload[action] = payload;
   const live = () => items.filter(i => !i.is_deleted);
   switch (action) {
     case 'loginCheck':
+      if (forbidden) return { ok: false, error: { code: 'FORBIDDEN_NOT_MEMBER', message: 'このアプリを利用する権限がありません', status: 403 } };
       return { ok: true, data: {
         user: { email: tokenEmail(idToken), name: 'テスト太郎', picture: '' },
         stockStatuses: ['余裕あり', '残りわずか', '在庫なし'],
@@ -64,6 +122,7 @@ function handleApi(body) {
         r = r.filter(i => (i.item_id + i.name + i.category + i.location + i.note).toLowerCase().includes(k));
       }
       if (payload.stock_status) r = r.filter(i => i.stock_status === payload.stock_status);
+      if (payload.restock === true) r = r.filter(i => ['残りわずか', '在庫なし'].includes(i.stock_status));
       if (payload.category) r = r.filter(i => i.category === payload.category);
       return { ok: true, data: { items: r, total: r.length } };
     }
@@ -74,6 +133,8 @@ function handleApi(body) {
     }
     case 'updateStatus': {
       const it = items.find(i => i.item_id === payload.item_id);
+      const conflict = conflictOf(it, payload);
+      if (conflict) return conflict;
       const before = it.stock_status;
       it.stock_status = payload.stock_status;
       it.updated_at = '2026-08-13 10:05:00';
@@ -82,22 +143,33 @@ function handleApi(body) {
     }
     case 'createItem': {
       const id = 'ITEM-000' + (items.length + 1);
-      const it = Object.assign({ item_id: id, photo_url: payload.photo ? 'https://lh3.googleusercontent.com/d/mock' : '', is_deleted: false, updated_at: '2026-08-13 10:10:00', updated_by: 'taro@example.com' }, payload);
+      const it = Object.assign({ item_id: id, photo_url: payload.photo && !photoFail ? 'https://lh3.googleusercontent.com/d/mock' : '', is_deleted: false, updated_at: '2026-08-13 10:10:00', updated_by: 'taro@example.com' }, payload);
       delete it.photo;
       items.push(it);
       const log = addLog(it.item_id, 'CREATE', '', { name: it.name, stock_status: it.stock_status });
-      return { ok: true, data: { item: it, log } };
+      const data = { item: it, log };
+      if (payload.photo && photoFail) data.photoError = '写真を保存できませんでした（模擬）。';
+      return { ok: true, data };
     }
     case 'updateItem': {
+      if (conflictNoItem.updateItem) {
+        return { ok: false, error: { code: 'CONFLICT', message: '他の人が先に更新していました', status: 409, data: { item: null } } };
+      }
       const it = items.find(i => i.item_id === payload.item_id);
+      const conflict = conflictOf(it, payload);
+      if (conflict) return conflict;
       const patch = Object.assign({}, payload);
       delete patch.item_id;
+      delete patch.base_version;
+      if (patch.photo) { patch.photo_url = 'https://lh3.googleusercontent.com/d/mock-edit'; delete patch.photo; }
       Object.assign(it, patch);
       const log = addLog(it.item_id, 'UPDATE', {}, patch);
       return { ok: true, data: { item: it, log } };
     }
     case 'deleteItem': {
       const it = items.find(i => i.item_id === payload.item_id);
+      const conflict = conflictOf(it, payload);
+      if (conflict) return conflict;
       it.is_deleted = true;
       const log = addLog(it.item_id, 'DELETE', { is_deleted: false }, { is_deleted: true });
       return { ok: true, data: { item: it, log } };
@@ -114,7 +186,8 @@ const server = http.createServer((req, res) => {
     photoRequests.push(req.url);
     // flaky は 1 回目だけ、broken は毎回失敗させる（読み直しの検証用）
     const n = photoRequests.filter(u => u === req.url).length;
-    if (req.url.includes('broken') || (req.url.includes('flaky') && n === 1)) {
+    // fail2 は 2 回目まで失敗する（自動の読み直しでも失敗し、手で読み直すと出る）
+    if (req.url.includes('broken') || (req.url.includes('flaky') && n === 1) || (req.url.includes('fail2') && n <= 2)) {
       res.writeHead(500, { 'Cache-Control': 'no-store' });
       return res.end('');
     }
@@ -130,6 +203,10 @@ const server = http.createServer((req, res) => {
       const action = JSON.parse(body).action;
       if (apiDrop[action]) return setTimeout(() => req.socket.destroy(), apiDelay[action] || 0);
       const out = JSON.stringify(handleApi(body));
+      if (apiLose[action] > 0) {   // 処理は済んだが、応答が届かない
+        apiLose[action]--;
+        return setTimeout(() => req.socket.destroy(), apiDelay[action] || 0);
+      }
       setTimeout(() => {
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         res.end(out);
@@ -142,7 +219,7 @@ const server = http.createServer((req, res) => {
   const file = path.join(DOCS, p);
   if (p === '/config.js') {
     res.writeHead(200, { 'Content-Type': 'text/javascript' });
-    return res.end(`window.APP_CONFIG={GAS_API_URL:'http://localhost:${PORT}/api',GOOGLE_CLIENT_ID:'test.apps.googleusercontent.com',APP_NAME:'備品管理',PHOTO_MAX_EDGE:1280,PHOTO_QUALITY:0.82};`);
+    return res.end(`window.APP_CONFIG={GAS_API_URL:'http://localhost:${PORT}/api',GOOGLE_CLIENT_ID:'test.apps.googleusercontent.com',APP_NAME:'備品管理',PHOTO_MAX_EDGE:1280,PHOTO_QUALITY:0.82,OP_RETRY_DELAYS_MS:[100,200]};`);
   }
   if (!fs.existsSync(file)) { res.writeHead(404); return res.end('nf'); }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'text/plain' });
@@ -181,7 +258,11 @@ const server = http.createServer((req, res) => {
   await ctx.route('**/html5-qrcode*', r => r.fulfill({ status: 200, contentType: 'text/javascript', body: '' }));
   // Drive の写真は外に取りに行かせず、要求された URL だけ記録する
   const driveRequests = [];
-  await ctx.route('https://lh3.googleusercontent.com/**', r => { driveRequests.push(r.request().url()); r.fulfill({ status: 200, contentType: 'image/png',
+  const driveReferers = [];   // 写真の要求に付いた Referer（付いていないはずなので、あれば記録される）
+  await ctx.route('https://lh3.googleusercontent.com/**', r => { driveRequests.push(r.request().url());
+    const ref = r.request().headers()['referer'];
+    if (ref) driveReferers.push(ref);
+    r.fulfill({ status: 200, contentType: 'image/png',
     body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') }); });
   await ctx.addInitScript(() => {
     window.google = { accounts: { id: {
@@ -487,6 +568,10 @@ const server = http.createServer((req, res) => {
   };
   const badge = async () => (await page.textContent('#view-detail .badge')).trim();
   const errorToast = () => page.waitForSelector('.toast-error', { timeout: 5000 });
+  /** 文言が pattern に合う失敗の知らせが出るまで待つ（前の検証の知らせが残っていても取り違えない） */
+  const errorToastMatching = (pattern) => page.waitForFunction(
+    re => Array.prototype.some.call(document.querySelectorAll('.toast-error'), e => new RegExp(re).test(e.textContent)),
+    pattern, { timeout: 5000 });
 
   await check('ステータスは押した直後に変わり、再取得せずに応答の履歴を足す。一覧とキャッシュにも反映する', async () => {
     await relogin(null);
@@ -565,6 +650,251 @@ const server = http.createServer((req, res) => {
     } finally { delete apiDelay.createItem; }
     const id = (await page.textContent('#view-detail dd')).trim();
     if (!/^ITEM-/.test(id)) throw new Error('採番された ID に差し替わっていない: ' + id);
+  });
+
+  /* ---------- 保存の途中失敗と再送（PLAN-2 項目 1） ---------- */
+  const countByName = (name) => items.filter(i => i.name === name).length;
+  const opsOf = (action, from) => opCalls.slice(from).filter(c => c.action === action);
+
+  await check('登録の応答が失われても、同じ操作 ID で自動で送り直し、二重に登録しない', async () => {
+    await page.click('[data-nav="new"]');
+    await page.fill('#f-name', '応答が消える登録');
+    const from = opCalls.length;
+    apiLose.createItem = 1;
+    try {
+      await page.click('#item-form button[type=submit]');
+      await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
+    } finally { delete apiLose.createItem; }
+    // 応答なしで切れた POST は、ブラウザ自身も同じ内容（op_attempt も同じ）で送り直すことがある。
+    // どちらが送り直しても、操作 ID は 1 つで、登録は 1 件になる
+    const sent = opsOf('createItem', from);
+    if (sent.length < 2 || new Set(sent.map(c => c.op_id)).size !== 1) throw new Error('同じ操作 ID で送り直していない: ' + JSON.stringify(sent));
+    if (countByName('応答が消える登録') !== 1) throw new Error('登録の件数: ' + countByName('応答が消える登録'));
+    const id = (await page.textContent('#view-detail dd')).trim();
+    if (!/^ITEM-/.test(id)) throw new Error('詳細が登録した備品になっていない: ' + id);
+  });
+
+  await check('保存できたか確認できないときはフォームに戻し、次の登録を同じ操作の送り直しにする', async () => {
+    await page.click('[data-nav="new"]');
+    await page.fill('#f-name', '確認できない登録');
+    const from = opCalls.length;
+    apiLose.createItem = Infinity;   // 自動の送り直し（2 回）を含めて、応答がすべて届かない
+    try {
+      await page.click('#item-form button[type=submit]');
+      await errorToastMatching('確認できませんでした');
+      await page.waitForSelector('#view-form:not(.hidden) #f-name');
+      if ((await page.inputValue('#f-name')) !== '確認できない登録') throw new Error('入力が消えた');
+    } finally { delete apiLose.createItem; }
+    await page.click('#item-form button[type=submit]');
+    await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
+    const sent = opsOf('createItem', from);
+    if (new Set(sent.map(c => c.op_id)).size !== 1) throw new Error('操作 ID が変わった: ' + JSON.stringify(sent));
+    // 自動の送り直し 2 回（2・3 回目）と、フォームからの送り直し（4 回目）
+    if ([...new Set(sent.map(c => c.op_attempt))].join(',') !== '1,2,3,4') throw new Error('送信の回数: ' + JSON.stringify(sent));
+    if (countByName('確認できない登録') !== 1) throw new Error('登録の件数: ' + countByName('確認できない登録'));
+    const h = await page.textContent('#view-detail:not(.hidden) h2');
+    if (!h.includes('確認できない登録')) throw new Error('詳細: ' + h);
+  });
+
+  await check('確認できなかった登録を、内容を変えて送り直したら、済んでいた備品を出して知らせる', async () => {
+    await page.click('[data-nav="new"]');
+    await page.fill('#f-name', '内容を変える登録');
+    apiLose.createItem = Infinity;
+    try {
+      await page.click('#item-form button[type=submit]');
+      await errorToast();
+      await page.waitForSelector('#view-form:not(.hidden) #f-name');
+    } finally { delete apiLose.createItem; }
+    await page.fill('#f-name', '内容を変える登録（直した）');
+    await page.click('#item-form button[type=submit]');
+    await errorToastMatching('前回の登録は完了していました');
+    await page.waitForFunction(() => { const h = document.querySelector('#view-detail:not(.hidden) h2'); return h && h.textContent.includes('内容を変える登録'); });
+    if (countByName('内容を変える登録') !== 1 || countByName('内容を変える登録（直した）') !== 0) throw new Error('重複して登録した');
+  });
+
+  await check('登録で写真だけ保存できなかったら、詳細の「写真だけ送り直す」で写真だけを送る（ほかの項目を上書きしない）', async () => {
+    await page.click('[data-nav="new"]');
+    await page.fill('#f-name', '写真だけ失敗');
+    await page.fill('#f-note', '登録したときの備考');
+    await page.setInputFiles('#f-photo', { name: 'p.png', mimeType: 'image/png',
+      buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') });
+    await page.waitForSelector('#photo-slot img');
+    photoFail = true;
+    try {
+      await page.click('#item-form button[type=submit]');
+      await errorToastMatching('写真は保存できませんでした');
+      await page.waitForSelector('#view-detail:not(.hidden) #btn-photo-retry');
+    } finally { photoFail = false; }
+    const created = items.find(i => i.name === '写真だけ失敗');
+    if (!created || created.photo_url) throw new Error('写真なしで登録されていない');
+    created.note = '他の人が変えた備考';          // 送り直すまでの間に、他の人が備考を変えた
+    await page.click('#btn-photo-retry');
+    // 画面が読んだ後に変わっているので、まず競合で止まり、最新（他の人の備考）が表示される
+    await errorToastMatching('他の人が先にこの備品を更新していた');
+    await page.waitForFunction(() => document.querySelector('#view-detail dl').textContent.includes('他の人が変えた備考'));
+    await page.click('#btn-photo-retry');
+    await page.waitForSelector('#btn-photo-retry', { state: 'detached', timeout: 5000 });
+    await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
+    const keys = Object.keys(lastPayload.updateItem).sort().join(',');
+    if (keys !== 'base_version,item_id,photo') throw new Error('写真以外も送った: ' + keys);
+    if (created.note !== '他の人が変えた備考') throw new Error('他の人の変更を上書きした: ' + created.note);
+    if (!created.photo_url) throw new Error('写真が保存されていない');
+    if (countByName('写真だけ失敗') !== 1) throw new Error('写真の送り直しで備品が増えた');
+  });
+
+  /* ---------- 同時編集の競合検出（PLAN-2 項目 2） ---------- */
+  await check('編集は変えた項目だけを、開いたときの版を添えて送る', async () => {
+    await openDetailOf('ITEM-0002');
+    await page.click('#btn-edit');
+    await page.fill('#f-note', '変えたのは備考だけ');
+    await page.click('#item-form button[type=submit]');
+    await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
+    const keys = Object.keys(lastPayload.updateItem).sort().join(',');
+    if (keys !== 'base_version,item_id,note') throw new Error('送った項目: ' + keys);
+  });
+
+  await check('編集の保存が他の人の更新と競合したら、止めて知らせ、入力を残す。自分が変えていない項目は最新にする', async () => {
+    await openDetailOf('ITEM-0002');
+    await page.click('#btn-edit');
+    await page.fill('#f-note', '自分の備考');
+    const it = items.find(i => i.item_id === 'ITEM-0002');
+    it.quantity = 99;                 // 自分が触っていない項目を、他の人が変えた
+    it.note = '他の人の備考';          // 自分が変えた項目も、他の人が変えた
+    await page.click('#item-form button[type=submit]');
+    await errorToastMatching('他の人が先にこの備品を更新していた');
+    await page.waitForSelector('#view-form:not(.hidden) #conflict-notice');
+    const notice = await page.textContent('#conflict-notice');
+    if (!notice.includes('他の人の備考') || !notice.includes('自分の備考')) throw new Error('知らせ: ' + notice);
+    if ((await page.inputValue('#f-note')) !== '自分の備考') throw new Error('入力が消えた');
+    if ((await page.inputValue('#f-quantity')) !== '99') throw new Error('触っていない項目が最新になっていない: ' + await page.inputValue('#f-quantity'));
+    if (it.note !== '他の人の備考') throw new Error('競合したのに保存された');
+    await page.click('#item-form button[type=submit]');
+    await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
+    if (it.note !== '自分の備考' || it.quantity !== 99) throw new Error('送り直しの結果: ' + JSON.stringify(it));
+    const keys = Object.keys(lastPayload.updateItem).sort().join(',');
+    if (keys !== 'base_version,item_id,note') throw new Error('送り直しで送った項目: ' + keys);
+  });
+
+  await check('最新の備品が返らない競合（行が消えたなど）でも、入力と写真を残してフォームに戻る', async () => {
+    await openDetailOf('ITEM-0002');
+    await page.click('#btn-edit');
+    await page.fill('#f-note', '失いたくない入力');
+    await page.setInputFiles('#f-photo', { name: 'p.png', mimeType: 'image/png',
+      buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') });
+    await page.waitForSelector('#photo-slot img');
+    conflictNoItem.updateItem = true;
+    try {
+      await page.click('#item-form button[type=submit]');
+      await errorToastMatching('最新の内容を確かめられなかった');
+      await page.waitForSelector('#view-form:not(.hidden) #f-note');
+      if ((await page.inputValue('#f-note')) !== '失いたくない入力') throw new Error('入力が消えた');
+      if (!(await page.$('#photo-slot img'))) throw new Error('写真の下書きが消えた');
+    } finally { delete conflictNoItem.updateItem; }
+    await page.click('#item-form button[type=submit]');
+    await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
+    if (items.find(i => i.item_id === 'ITEM-0002').note !== '失いたくない入力') throw new Error('送り直しで保存されない');
+  });
+
+  await check('ステータス更新が他の人の更新と競合したら、止めて最新の状態を表示する', async () => {
+    await openDetailOf('ITEM-0001');
+    const it = items.find(i => i.item_id === 'ITEM-0001');
+    const shown = await badge();
+    const theirs = shown === '在庫なし' ? '残りわずか' : '在庫なし';
+    const mine = ['余裕あり', '残りわずか', '在庫なし'].find(s => s !== shown && s !== theirs);
+    it.stock_status = theirs;         // 画面が読んだ後に、他の人が変えた
+    await page.click('[data-set-status="' + mine + '"]');
+    await errorToastMatching('他の人が先にこの備品を更新していた');
+    await page.waitForFunction(t => document.querySelector('#view-detail .badge').textContent === t, theirs);
+    if (it.stock_status !== theirs) throw new Error('競合したのに保存された');
+  });
+
+  /* ---------- 情報の新しさと通信状態（PLAN-2 項目 3） ---------- */
+  const syncOf = (sel) => page.$eval(sel, el => {
+    const t = el.querySelector('[data-sync-status]');
+    return t ? { status: t.getAttribute('data-sync-status'), old: t.hasAttribute('data-sync-old'), text: t.textContent } : null;
+  });
+  const reloadWithCache = async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.click('#mock-signin');
+    await page.waitForSelector('#item-list [data-item-id]', { timeout: FAST });
+  };
+
+  await check('キャッシュを出して通信が遅いときは「確認中」といつの情報かを出し、届いたら「最新」にする', async () => {
+    apiDelay.loginCheck = SLOW;
+    try {
+      await reloadWithCache();
+      const s = await syncOf('#sync-list');
+      if (!s || s.status !== 'checking' || !/確認した情報/.test(s.text)) throw new Error('確認中の表示: ' + JSON.stringify(s));
+      await page.waitForFunction(() => { const t = document.querySelector('#sync-list [data-sync-status]'); return t && t.getAttribute('data-sync-status') === 'fresh'; }, null, { timeout: SLOW + 3000 });
+      const f = await syncOf('#sync-list');
+      if (!/最新の情報です/.test(f.text)) throw new Error('最新の表示: ' + f.text);
+    } finally { delete apiDelay.loginCheck; }
+  });
+
+  await check('通信できないときは「通信できません」といつの情報かを出し、表示中の内容は消さない。再試行で最新にする', async () => {
+    await openDetailOf('ITEM-0001');
+    const shownBadge = await badge();
+    await page.click('#btn-back');
+    await page.waitForSelector('#item-list [data-item-id]');
+    apiDrop.getItem = true;
+    try {
+      await page.click('[data-item-id="ITEM-0001"]');
+      await page.waitForFunction(() => { const t = document.querySelector('#sync-detail [data-sync-status]'); return t && t.getAttribute('data-sync-status') === 'offline'; }, null, { timeout: 5000 });
+      const s = await syncOf('#sync-detail');
+      if (!/通信できません/.test(s.text) || !/確認した情報を表示しています/.test(s.text)) throw new Error('通信断の表示: ' + s.text);
+      if ((await badge()) !== shownBadge) throw new Error('表示中の在庫が変わった: ' + await badge());
+      await snap('10-sync-offline');
+    } finally { delete apiDrop.getItem; }
+    await page.click('#sync-detail [data-sync-refresh]');
+    await page.waitForFunction(() => { const t = document.querySelector('#sync-detail [data-sync-status]'); return t && t.getAttribute('data-sync-status') === 'fresh'; }, null, { timeout: 5000 });
+  });
+
+  await check('1 日以上確かめていない情報は、古いことを目立たせて知らせる', async () => {
+    await page.evaluate(k => {
+      const c = JSON.parse(localStorage.getItem(k));
+      c.confirmedAt = Date.now() - 2 * 24 * 60 * 60 * 1000;
+      localStorage.setItem(k, JSON.stringify(c));
+    }, CACHE_KEY);
+    apiDrop.loginCheck = true;
+    try {
+      await reloadWithCache();
+      await page.waitForFunction(() => { const t = document.querySelector('#sync-list [data-sync-status]'); return t && t.getAttribute('data-sync-status') === 'offline'; }, null, { timeout: 5000 });
+      const s = await syncOf('#sync-list');
+      if (!s.old || !/1 日以上/.test(s.text) || !/2 日前/.test(s.text)) throw new Error('古い情報の表示: ' + JSON.stringify(s));
+      if ((await page.$$('#item-list [data-item-id]')).length === 0) throw new Error('前回の一覧が消えた');
+      await snap('9-sync-old');
+    } finally { delete apiDrop.loginCheck; }
+    await page.click('#sync-list [data-sync-refresh]');
+    await page.waitForFunction(() => { const t = document.querySelector('#sync-list [data-sync-status]'); return t && t.getAttribute('data-sync-status') === 'fresh'; }, null, { timeout: 5000 });
+  });
+
+  await check('絞り込みを変えた後に通信できなければ、前の一覧や「該当なし」ではなく、取得できなかったと出す', async () => {
+    apiDrop.getItems = true;
+    try {
+      await page.selectOption('#filter-status', '在庫なし');
+      await page.waitForSelector('#list-failed', { timeout: 5000 });
+      if (await page.$('#item-list [data-item-id]')) throw new Error('絞り込む前の一覧を出している');
+      const text = await page.textContent('#item-list');
+      if (text.includes('該当する備品がありません')) throw new Error('該当なしと出した');
+      if ((await page.textContent('#list-count')).includes('0 件')) throw new Error('0 件と出した');
+    } finally { delete apiDrop.getItems; }
+    await page.click('#sync-list [data-sync-refresh]');
+    await page.waitForFunction(() => !document.querySelector('#list-failed'), null, { timeout: 5000 });
+    await page.selectOption('#filter-status', '');
+    await page.waitForSelector('#item-list [data-item-id]');
+  });
+
+  await check('権限がないと断られたら、キャッシュを消してログイン画面に戻す', async () => {
+    await relogin(null);
+    if (!(await page.evaluate(k => localStorage.getItem(k), CACHE_KEY))) throw new Error('前提: キャッシュが無い');
+    forbidden = true;
+    try {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.click('#mock-signin');
+      await page.waitForSelector('#view-login:not(.hidden) #login-error:not(.hidden)', { timeout: 5000 });
+      if (await page.evaluate(k => localStorage.getItem(k), CACHE_KEY)) throw new Error('キャッシュが残った');
+    } finally { forbidden = false; }
+    await relogin(null);
   });
 
   await check('裏で取っていた詳細の古い応答が、更新の後に届いても画面とキャッシュを戻さない', async () => {
@@ -653,11 +983,134 @@ const server = http.createServer((req, res) => {
       const ok = await page.$eval('[data-item-id="ITEM-0001"] img', i => i.complete && i.naturalWidth > 0).catch(() => false);
       if (!ok) throw new Error('1 回目に失敗した写真が読み直されていない');
       if (photoRequests.filter(u => u.endsWith(a.photo_url.split('/').pop())).length !== 2) throw new Error('読み直しの回数が違う');
-      if (await page.$('[data-item-id="ITEM-0002"] img')) throw new Error('2 回失敗した写真が灰色の枠になっていない');
+      if (await page.$('[data-item-id="ITEM-0002"] img')) throw new Error('2 回失敗した写真が失敗の表示になっていない');
     } finally {
       a.photo_url = oldA;
       b2.photo_url = oldB;
     }
+  });
+
+  /* ---------- 写真の読み込み失敗の見分けと手で読み直す操作（PLAN-2 項目 4） ---------- */
+  const photoCount = (url) => photoRequests.filter(u => u.endsWith(url.split('/').pop())).length;
+  // 一覧を通らずに（スキャン画面の手入力で）詳細を開く。一覧のサムネイルが同じ写真を取りに行かないので、
+  // 写真の要求を詳細の分だけ数えられる
+  const openDetailById = async (id, photoUrl) => {
+    await page.click('[data-nav="scan"]');
+    await page.waitForSelector('#manual-id');
+    await page.fill('#manual-id', id);
+    await page.click('#btn-manual-go');
+    await page.waitForFunction(u => { const d = document.querySelector('#view-detail:not(.hidden)');
+      return d && (d.querySelector('img[src="' + u + '"]') || d.querySelector('#photo-failed')); }, photoUrl, { timeout: 5000 });
+  };
+
+  await check('何度も失敗した写真は「読めません」と出し、写真なし（📦）と見分けられる。一覧から読み直せる', async () => {
+    const a = items.find(i => i.item_id === 'ITEM-0001');
+    const c = items.find(i => i.item_id === 'ITEM-0003');
+    const oldA = a.photo_url, oldC = c.photo_url;
+    a.photo_url = `http://localhost:${PORT}/mockphoto/fail2-list-${Date.now()}`;
+    c.photo_url = '';
+    try {
+      await page.click('[data-nav="scan"]');
+      await page.click('[data-nav="list"]');
+      await page.waitForSelector('[data-item-id="ITEM-0001"] [data-photo-failed]', { timeout: 5000 });
+      if (!(await page.textContent('[data-item-id="ITEM-0001"] [data-photo-failed]')).includes('読めません')) throw new Error('失敗の表示の文言');
+      if (!(await page.textContent('[data-item-id="ITEM-0003"]')).includes('📦')) throw new Error('写真なしの表示が変わった');
+      if (await page.$('[data-item-id="ITEM-0003"] [data-photo-failed]')) throw new Error('写真なしを失敗と表示した');
+      if (photoCount(a.photo_url) !== 2) throw new Error('自動の読み直しの回数: ' + photoCount(a.photo_url));
+      await page.click('#btn-photo-reload-list');
+      await page.waitForFunction(() => { const i = document.querySelector('[data-item-id="ITEM-0001"] img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 5000 });
+      if (await page.isVisible('#btn-photo-reload-list')) throw new Error('読み直した後もボタンが出ている');
+    } finally { a.photo_url = oldA; c.photo_url = oldC; }
+  });
+
+  await check('詳細の写真を読み込めなければ「再読み込み」を出し、押すと取り直す。読み直しは続かない', async () => {
+    const it = items.find(i => i.item_id === 'ITEM-0002');
+    const old = it.photo_url;
+    it.photo_url = `http://localhost:${PORT}/mockphoto/broken-detail-${Date.now()}`;
+    try {
+      await openDetailById('ITEM-0002', it.photo_url);
+      await page.waitForSelector('#view-detail #photo-failed #btn-photo-reload', { timeout: 6000 });
+      if (photoCount(it.photo_url) !== 2) throw new Error('自動の読み直しの回数: ' + photoCount(it.photo_url));
+      await page.click('#btn-photo-reload');
+      await page.waitForSelector('#view-detail #photo-failed', { timeout: 6000 });
+      await page.waitForTimeout(2500);
+      if (photoCount(it.photo_url) !== 4) throw new Error('手で読み直した後の回数（手で 1 回＋自動 1 回のはず）: ' + photoCount(it.photo_url));
+      // 2 回目まで失敗する写真なら、手で読み直すと出る
+      it.photo_url = `http://localhost:${PORT}/mockphoto/fail2-detail-${Date.now()}`;
+      await page.click('#sync-detail [data-sync-refresh]');
+      await page.waitForSelector('#view-detail #btn-photo-reload', { timeout: 6000 });
+      await page.click('#btn-photo-reload');
+      await page.waitForFunction(() => { const i = document.querySelector('#view-detail img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 5000 });
+    } finally { it.photo_url = old; }
+  });
+
+  await check('読み直す前に画面を離れたら、写真を取りに行かない', async () => {
+    const it = items.find(i => i.item_id === 'ITEM-0002');
+    const old = it.photo_url;
+    it.photo_url = `http://localhost:${PORT}/mockphoto/broken-leave-${Date.now()}`;
+    try {
+      await openDetailById('ITEM-0002', it.photo_url);
+      await page.waitForFunction(u => { const i = document.querySelector('#view-detail img'); return i && i.src === u && i.dataset.retry === '1'; }, it.photo_url, { timeout: 5000 });
+      await page.click('[data-nav="scan"]');                  // 1 秒後の読み直しの前に別の画面へ移る
+      await page.waitForTimeout(1800);
+      if (photoCount(it.photo_url) !== 1) throw new Error('画面を離れた後に取りに行った: ' + photoCount(it.photo_url));
+    } finally { it.photo_url = old; }
+  });
+
+  /* ---------- 要補充の入口（PLAN-2 項目 5） ---------- */
+  const cardIds = () => page.$$eval('#item-list [data-item-id]', els => els.map(e => e.getAttribute('data-item-id')));
+
+  await check('「要補充」で残りわずか・在庫なしだけを出し、件数と絞り込みの状態が合う。在庫の選択・クリアで外れる', async () => {
+    await page.click('[data-nav="list"]');
+    await page.waitForSelector('#view-list:not(.hidden) [data-item-id]');
+    await page.click('#btn-restock');
+    await page.waitForFunction(() => document.querySelector('#list-count').textContent.startsWith('要補充'));
+    if (lastPayload.getItems.restock !== true) throw new Error('要補充を送っていない: ' + JSON.stringify(lastPayload.getItems));
+    const want = items.filter(i => !i.is_deleted && ['残りわずか', '在庫なし'].includes(i.stock_status)).map(i => i.item_id).sort();
+    const shown = (await cardIds()).sort();
+    if (JSON.stringify(shown) !== JSON.stringify(want)) throw new Error('出した備品: ' + shown + ' / 期待: ' + want);
+    if ((await page.textContent('#list-count')).trim() !== '要補充 ' + want.length + ' 件') throw new Error('件数: ' + await page.textContent('#list-count'));
+    if (await page.getAttribute('#btn-restock', 'aria-pressed') !== 'true') throw new Error('ボタンが押された状態になっていない');
+    // カテゴリとの併用
+    const cat = items.find(i => want.includes(i.item_id)).category;
+    await page.selectOption('#filter-category', cat);
+    await page.waitForFunction(c => { const p = document.querySelector('#filter-category'); return p.value === c; }, cat);
+    await page.waitForTimeout(300);
+    const both = (await cardIds()).sort();
+    const wantBoth = items.filter(i => !i.is_deleted && ['残りわずか', '在庫なし'].includes(i.stock_status) && i.category === cat).map(i => i.item_id).sort();
+    if (JSON.stringify(both) !== JSON.stringify(wantBoth)) throw new Error('カテゴリとの併用: ' + both);
+    // 在庫を選ぶと要補充は外れる
+    await page.selectOption('#filter-status', '余裕あり');
+    await page.waitForFunction(() => document.querySelector('#btn-restock').getAttribute('aria-pressed') === 'false');
+    await page.waitForTimeout(300);
+    if (lastPayload.getItems.restock) throw new Error('在庫を選んでも要補充を送った');
+    // クリアで全部に戻る
+    await page.click('#btn-clear-filter');
+    await page.waitForFunction(n => document.querySelectorAll('#item-list [data-item-id]').length === n, items.filter(i => !i.is_deleted).length);
+    if ((await page.textContent('#list-count')).includes('要補充')) throw new Error('クリアしても要補充のまま');
+  });
+
+  await check('要補充が 0 件なら「補充が必要な備品はありません」と出し、通信の失敗とは別に表示する', async () => {
+    const saved = items.map(i => i.stock_status);
+    items.forEach(i => { i.stock_status = '余裕あり'; });
+    try {
+      await page.click('#btn-restock');
+      await page.waitForSelector('#list-empty', { timeout: 5000 });
+      if (!(await page.textContent('#list-empty')).includes('補充が必要な備品はありません')) throw new Error('0 件の文言');
+      if ((await page.textContent('#list-count')).trim() !== '要補充 0 件') throw new Error('件数: ' + await page.textContent('#list-count'));
+      await page.click('#btn-restock');                // いったん外す
+      await page.waitForSelector('#item-list [data-item-id]');
+      apiDrop.getItems = true;
+      try {
+        await page.click('#btn-restock');              // 通信できないときに要補充を押す
+        await page.waitForSelector('#list-failed', { timeout: 5000 });
+        if (await page.$('#list-empty')) throw new Error('通信の失敗を 0 件と表示した');
+      } finally { delete apiDrop.getItems; }
+    } finally {
+      items.forEach((i, k) => { i.stock_status = saved[k]; });
+    }
+    await page.click('#btn-clear-filter');
+    await page.waitForSelector('#item-list [data-item-id]');
   });
 
   await check('Drive の写真は表示の大きさに縮めた URL で取る', async () => {
@@ -677,6 +1130,29 @@ const server = http.createServer((req, res) => {
       if (!/=w800$/.test(detail)) throw new Error('詳細の URL: ' + detail);          // 幅 390px × 2 → 800px
       await page.waitForTimeout(300);
       if (driveRequests.some(u => u.endsWith('/FILEID123'))) throw new Error('原寸を取りに行った');
+    } finally {
+      it.photo_url = old;
+    }
+  });
+
+  await check('Drive の写真は Referer を付けずに取る（lh3 の 429 と ORB を避ける）', async () => {
+    const it = items.find(i => i.item_id === 'ITEM-0003');
+    const old = it.photo_url;
+    it.photo_url = 'https://lh3.googleusercontent.com/d/FILEID456';
+    driveRequests.length = 0;
+    driveReferers.length = 0;
+    try {
+      await page.click('[data-nav="scan"]');
+      await page.click('[data-nav="list"]');
+      await page.waitForFunction(() => { const i = document.querySelector('[data-item-id="ITEM-0003"] img'); return i && i.src.includes('FILEID456') && i.complete; });
+      await page.click('[data-item-id="ITEM-0003"]');
+      // 詳細はまず端末内キャッシュ（前の検証の写真）で出てから最新に替わるので、この写真になるまで待つ
+      await page.waitForFunction(() => { const i = document.querySelector('#view-detail:not(.hidden) img'); return i && i.src.includes('FILEID456') && i.complete; });
+      const n = driveRequests.filter(u => u.includes('FILEID456')).length;
+      if (n < 2) throw new Error('一覧と詳細の写真を取りに行っていない: ' + n);
+      if (driveReferers.length) throw new Error('Referer が付いた: ' + driveReferers.join(', '));
+      const policies = await page.$$eval('#item-list img, #view-detail img', els => els.map(e => e.referrerPolicy));
+      if (policies.some(p => p !== 'no-referrer')) throw new Error('referrerpolicy: ' + policies.join(','));
     } finally {
       it.photo_url = old;
     }

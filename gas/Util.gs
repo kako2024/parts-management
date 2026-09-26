@@ -10,12 +10,23 @@
  * GAS Web App は常に HTTP 200 を返すため、status はレスポンス JSON に載せて
  * フロント側で分岐させる用途で使う。
  */
-function ApiError_(code, message, status) {
+function ApiError_(code, message, status, data) {
   var e = new Error(message);
   e.name = 'ApiError';
   e.code = code;
   e.status = status || 400;
+  if (data !== undefined) e.data = data; // 画面が次の操作を決めるための値（OP_MISMATCH の備品など）
   return e;
+}
+
+/**
+ * このリクエストでシートへの書き込みを始めたか。書き込みの途中で失敗すると、一部だけ保存された
+ * 可能性があるので、エラーの応答に maybeSaved を付けて画面に知らせる（画面は同じ操作 ID で送り直す）。
+ */
+var WRITE_STARTED_ = false;
+
+function noteWriteStarted_() {
+  WRITE_STARTED_ = true;
 }
 
 /* =========================================================
@@ -62,7 +73,10 @@ function errRes_(err) {
   if (status >= 500) {
     console.error('[API ERROR] ' + code + ' : ' + message + '\n' + (err && err.stack));
   }
-  return jsonOut_({ ok: false, error: { code: code, message: message, status: status } });
+  var error = { code: code, message: message, status: status };
+  if (WRITE_STARTED_) error.maybeSaved = true;
+  if (err && err.data !== undefined) error.data = err.data;
+  return jsonOut_({ ok: false, error: error });
 }
 
 /** 'YYYY-MM-DD HH:mm:ss' */

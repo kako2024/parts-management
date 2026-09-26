@@ -28,10 +28,21 @@ function sheet_(name) {
  * =======================================================*/
 
 /**
+ * 1 回のリクエストの中で読んだ items シートの内容。書き込み（insertItem_ / updateItemRow_）で捨てる。
+ * 操作 ID の確認（Op.gs）と、その後の処理（findItem_ など）で同じシートを 2 度読まないため。
+ */
+var ITEMS_MEMO_ = null;
+
+function forgetItemsMemo_() {
+  ITEMS_MEMO_ = null;
+}
+
+/**
  * items シートを丸ごと読み込み、行番号付きのオブジェクト配列で返す。
  * @return {{rows: Array<Object>, idx: Object, sheet: Sheet}}
  */
 function readItems_() {
+  if (ITEMS_MEMO_) return ITEMS_MEMO_;
   var sh = sheet_(CONST.SHEET_ITEMS);
   var values = sh.getDataRange().getValues();
   lap_('readItems(' + (values.length - 1) + 'rows)');
@@ -43,30 +54,96 @@ function readItems_() {
 
   var rows = [];
   for (var r = 1; r < values.length; r++) {
-    var row = values[r];
-    var id = toStr_(row[idx.item_id]).trim();
-    if (!id) continue; // 空行スキップ
-    rows.push({
-      _row: r + 1, // 1始まりのシート行番号
-      item_id: id,
-      name: toStr_(row[idx.name]),
-      category: toStr_(row[idx.category]),
-      location: toStr_(row[idx.location]),
-      stock_status: toStr_(row[idx.stock_status]),
-      quantity: toNumOrNull_(row[idx.quantity]),
-      photo_url: toStr_(row[idx.photo_url]),
-      note: toStr_(row[idx.note]),
-      updated_at: toStr_(row[idx.updated_at]),
-      updated_by: toStr_(row[idx.updated_by]),
-      is_deleted: toBool_(row[idx.is_deleted])
-    });
+    var item = rowToItem_(values[r], idx, r + 1);
+    if (item) rows.push(item);
   }
-  return { rows: rows, idx: idx, sheet: sh };
+  ITEMS_MEMO_ = { rows: rows, idx: idx, sheet: sh };
+  return ITEMS_MEMO_;
+}
+
+/** シートの 1 行を備品のオブジェクトにする。item_id が空の行は null */
+function rowToItem_(row, idx, rowNumber) {
+  var id = toStr_(row[idx.item_id]).trim();
+  if (!id) return null; // 空行スキップ
+  var item = {
+    _row: rowNumber, // 1始まりのシート行番号
+    item_id: id,
+    name: toStr_(row[idx.name]),
+    category: toStr_(row[idx.category]),
+    location: toStr_(row[idx.location]),
+    stock_status: toStr_(row[idx.stock_status]),
+    quantity: toNumOrNull_(row[idx.quantity]),
+    photo_url: toStr_(row[idx.photo_url]),
+    note: toStr_(row[idx.note]),
+    updated_at: toStr_(row[idx.updated_at]),
+    updated_by: toStr_(row[idx.updated_by]),
+    is_deleted: toBool_(row[idx.is_deleted]),
+    _op_ids: idx.op_ids === undefined ? '' : toStr_(row[idx.op_ids]),
+    _raw: row // 行全体を 1 回で書き直すときに使う（updateItemRow_）
+  };
+  item.version = itemVersion_(item);
+  return item;
+}
+
+/**
+ * 備品の内容の版（PLAN-2 項目 2）。items の列（ITEM_HEADERS）の値から作る要約値で、アプリの更新でも
+ * シートの直接編集でも、内容が変われば変わる。画面は読んだときの版を base_version として更新に添え、
+ * サーバーは今の版と違えば保存を止める（assertBaseVersion_）。一覧でも全件に付けるので、暗号用の
+ * ハッシュではなく軽い FNV-1a を 2 通り（64 ビット分）使う。
+ */
+function itemVersion_(item) {
+  var s = JSON.stringify(CONST.ITEM_HEADERS.map(function (h) { return item[h] === undefined ? null : item[h]; }));
+  var h1 = 0x811c9dc5;
+  var h2 = 0x9747b28c;
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+    h2 = Math.imul(h2 ^ c, 2246822519) >>> 0;
+  }
+  return ('0000000' + h1.toString(16)).slice(-8) + ('0000000' + h2.toString(16)).slice(-8);
+}
+
+/**
+ * 画面が読んだときの版（base_version）と今の版が違えば、保存を止めて CONFLICT で知らせる（何も書かない）。
+ * base_version の無い送信（古い画面）は確かめない。
+ */
+function assertBaseVersion_(item, baseVersion) {
+  if (baseVersion === undefined || baseVersion === null || baseVersion === '') return;
+  if (toStr_(baseVersion) === item.version) return;
+  throw conflictError_(item);
+}
+
+function conflictError_(item) {
+  return new ApiError_('CONFLICT',
+    '他の人が先にこの備品を更新していました。最新の内容を確かめてから、もう一度保存してください。',
+    409, { item: item ? stripInternal_(item) : null });
+}
+
+/**
+ * セルに書く値。文字は先頭に「'」を付けて、文字のまま置く。
+ * - 「=」などで始まる入力が数式として実行されない。手で入れた「=」で始まる文字も、書き戻しで数式に変えない
+ * - 「3-2」「001」などがシートの自動変換で日付や数値に変わらない（書いた値と読み返す値が同じになり、
+ *   版（itemVersion_）がずれない）
+ */
+function asCellLiteral_(v) {
+  return (typeof v === 'string' && v !== '') ? "'" + v : v;
+}
+
+/**
+ * items シートに列 name が無ければ末尾に足し、ctx.idx にも反映する（書き込みの処理の中で呼ぶ。Config.gs の
+ * ITEM_EXTRA_HEADERS）。既存のシートでも、initSpreadsheet を実行し直さずに使い続けられるようにするため。
+ */
+function ensureItemColumn_(ctx, name) {
+  if (ctx.idx[name] !== undefined) return;
+  var col = ctx.sheet.getLastColumn() + 1;
+  ctx.sheet.getRange(1, col).setValue(name);
+  ctx.idx[name] = col - 1;
 }
 
 /* ---------- 読み取り用の備品キャッシュ（PERF.md 項目 5） ----------
  * 一覧・単票の読み取りでは、シートを開いて全体を読む代わりに CacheService の写しを使う。
- * 書き込み系の処理は必ずシートを読む（findItem_）。シートを直接編集した場合は
+ * 書き込み系の処理は必ずシートを読む（findItem_）。シートを直接編集した場合は、変更トリガー
+ * （onSheetChange）が写しを捨てるのですぐ反映される。トリガーが無い・動かなかった場合も
  * CONST.ITEMS_CACHE_SEC 秒以内に反映される。値は 1 件 100KB までなので、JSON を分割して保存する。
  *
  * 写しは「版」ごとに別のキーへ置く。書き込み（insertItem_ / updateItemRow_）はシートへの反映後に
@@ -82,12 +159,20 @@ var CACHE_VERSION_SEC_ = 21600;
 
 /** verKey の現在の版。無ければ作る */
 function cacheVersion_(cache, verKey) {
-  var v = cache.get(verKey);
-  if (!v) {
-    v = Utilities.getUuid();
-    cache.put(verKey, v, CACHE_VERSION_SEC_);
-  }
-  return v;
+  return cacheVersions_(cache, [verKey])[0];
+}
+
+/** verKeys それぞれの現在の版（同じ順の配列）。無いものは作る。問い合わせは 1 回で済ませる */
+function cacheVersions_(cache, verKeys) {
+  var got = cache.getAll(verKeys);
+  var fresh = {};
+  var out = verKeys.map(function (k) {
+    if (got[k]) return got[k];
+    fresh[k] = Utilities.getUuid();
+    return fresh[k];
+  });
+  if (Object.keys(fresh).length) cache.putAll(fresh, CACHE_VERSION_SEC_);
+  return out;
 }
 
 /** この実行で版を新しくする予定のキー（commitCacheVersions_ でまとめて反映する） */
@@ -148,6 +233,20 @@ function readItemsForRead_() {
 
 function invalidateItemsCache_() {
   bumpCacheVersion_(ITEMS_CACHE_KEY_ + ':ver');
+}
+
+/**
+ * スプレッドシートが変更されたときに呼ばれる（インストール型の変更トリガー。Setup.gs の installSheetTrigger で登録する）。
+ * 備品の写しと、全備品の履歴の写しをまとめて読まれなくする。変更トリガーはどのセルが変わったかを渡さず、
+ * 行の削除なども含むので、場所を見て選ばずに全部捨てる（直接の編集はまれなので、捨てても読み直しは少ない）。
+ * スクリプトによる書き込み（この API の更新）では呼ばれないので、アプリからの更新は従来どおり withLock_ が版を変える。
+ * トリガーは変更が保存された後に呼ばれるので、ここで版を変えた後の読み取りは変更後の内容を読む。
+ */
+function onSheetChange(e) {
+  var fresh = {};
+  fresh[ITEMS_CACHE_KEY_ + ':ver'] = Utilities.getUuid();
+  fresh[LOGS_GEN_KEY_] = Utilities.getUuid();
+  CacheService.getScriptCache().putAll(fresh, CACHE_VERSION_SEC_);
 }
 
 /** 有効な（論理削除されていない）備品一覧 */
@@ -233,24 +332,36 @@ function insertItem_(input, userEmail) {
     is_deleted: false
   };
 
+  noteWriteStarted_();
+  forgetItemsMemo_();
+  ensureItemColumn_(data, 'op_ids');
   var width = data.sheet.getLastColumn();
   var rowArr = new Array(width).fill('');
   CONST.ITEM_HEADERS.forEach(function (h) {
     var v = record[h];
     if (h === 'is_deleted') v = false;
     if (h === 'quantity' && v === null) v = '';
-    rowArr[idx[h]] = v;
+    rowArr[idx[h]] = asCellLiteral_(v);
   });
+  // 行と一緒に書くので、行があれば操作の記録もある（Op.gs）
+  rowArr[idx.op_ids] = asCellLiteral_(nextOpIds_('', currentOpMark_()));
 
   data.sheet.appendRow(rowArr);
   invalidateItemsCache_();
   lap_('appendItem');
+  record.version = itemVersion_(record);
   return record;
 }
 
 /**
  * 既存行を部分更新する。
- * @param {Object} item  readItems_ が返した行オブジェクト（_row を持つ）
+ * 行全体を 1 回の setValues で書く。途中まで書かれた行を残さず、操作の記録（op_ids）も同じ書き込みに含める
+ * （行が書かれていれば、その操作の記録もある。Op.gs）。書き換えない列は、数式なら数式のまま、
+ * 値なら値のまま書き戻す（getValues は数式の計算結果を返すので、数式は getFormulas で別に読む）。
+ * 書く直前にその行を読み直し、このリクエストで読んだ後に内容が変わっていたら（シートの直接編集）、
+ * 何も書かずに CONFLICT にする。書き戻す値も読み直した値から作る。行の挿入・削除で行がずれていたら、
+ * ID で探し直し、内容が同じならずれた先の行に書く（内容が違えば最新を、見つからなければ null を CONFLICT で返す）。
+ * @param {Object} item  readItems_ が返した行オブジェクト（_row・version を持つ）。ロックの中で読んだもの
  * @param {Object} patch 更新したい列だけ
  * @param {Object} ctx   readItems_ の戻り値
  * @param {string} userEmail
@@ -258,25 +369,52 @@ function insertItem_(input, userEmail) {
 function updateItemRow_(item, patch, ctx, userEmail) {
   var sh = ctx.sheet;
   var idx = ctx.idx;
-  var row = item._row;
+  forgetItemsMemo_();
+  ensureItemColumn_(ctx, 'op_ids');
 
+  var width = sh.getLastColumn();
+  var rowNumber = item._row;
+  var range = sh.getRange(rowNumber, 1, 1, width);
+  var fresh = range.getValues()[0];
+  var current = rowToItem_(fresh, idx, rowNumber);
+  if (!current || current.item_id !== item.item_id) {
+    // 行がずれた：ID で探し直す
+    forgetItemsMemo_();
+    var moved = readItems_().rows.filter(function (r) { return r.item_id === item.item_id; })[0];
+    forgetItemsMemo_();
+    if (!moved) throw conflictError_(null);
+    rowNumber = moved._row;
+    range = sh.getRange(rowNumber, 1, 1, width);
+    fresh = range.getValues()[0];
+    current = rowToItem_(fresh, idx, rowNumber);
+    if (!current || current.item_id !== item.item_id) throw conflictError_(moved);
+  }
+  if (current.version !== item.version) throw conflictError_(current);
+  var formulas = range.getFormulas()[0];
+  noteWriteStarted_();
+  var values = [];
+  for (var c = 0; c < width; c++) {
+    values.push(formulas[c] ? formulas[c] : asCellLiteral_(fresh[c] === undefined ? '' : fresh[c]));
+  }
   Object.keys(patch).forEach(function (key) {
     if (idx[key] === undefined) return;
     var v = patch[key];
     if (key === 'quantity' && v === null) v = '';
-    sh.getRange(row, idx[key] + 1).setValue(v);
+    values[idx[key]] = asCellLiteral_(v);
   });
-
   var now = nowString_();
-  sh.getRange(row, idx.updated_at + 1).setValue(now);
-  sh.getRange(row, idx.updated_by + 1).setValue(userEmail);
+  values[idx.updated_at] = asCellLiteral_(now);
+  values[idx.updated_by] = asCellLiteral_(userEmail);
+  values[idx.op_ids] = asCellLiteral_(nextOpIds_(current._op_ids, currentOpMark_()));
+  range.setValues([values]);
   invalidateItemsCache_();
   lap_('writeRow');
 
-  var merged = stripInternal_(item);
+  var merged = stripInternal_(current);
   Object.keys(patch).forEach(function (k) { merged[k] = patch[k]; });
   merged.updated_at = now;
   merged.updated_by = userEmail;
+  merged.version = itemVersion_(merged);
   return merged;
 }
 
@@ -327,6 +465,8 @@ function nextLogIdFromSheet_(sh, today) {
  */
 function appendLog_(itemId, userEmail, actionType, before, after) {
   var sh = sheet_(CONST.SHEET_LOGS);
+  noteWriteStarted_();
+  ensureLogOpColumn_(sh);
   var logId = nextLogId_(sh);
   var fmt = function (v) {
     if (v === null || v === undefined) return '';
@@ -341,10 +481,29 @@ function appendLog_(itemId, userEmail, actionType, before, after) {
     before_state: fmt(before),
     after_state: fmt(after)
   };
-  sh.appendRow([log.log_id, log.timestamp, log.item_id, log.user_email, log.action_type, log.before_state, log.after_state]);
+  sh.appendRow([log.log_id, log.timestamp, log.item_id, log.user_email, log.action_type, log.before_state, log.after_state,
+    currentOpMark_()]);
   bumpCacheVersion_(logVersionKey_(itemId));
   lap_('appendLog');
   return log; // readLogs_ と同じ形。画面が履歴を取り直さずに済むよう API の応答に含める
+}
+
+/** logs の 8 列目が op_id であることを確かめる。空なら見出しを書く。確かめた結果は 6 時間覚えておく */
+var LOG_OP_COL_ = CONST.LOG_HEADERS.length + 1;
+
+function ensureLogOpColumn_(sh) {
+  var cache = CacheService.getScriptCache();
+  var key = 'schema:logs:op_id';
+  if (cache.get(key)) return;
+  var cell = sh.getRange(1, LOG_OP_COL_);
+  var head = toStr_(cell.getValue()).trim();
+  if (!head) {
+    cell.setValue('op_id');
+  } else if (head !== 'op_id') {
+    throw new ApiError_('SHEET_SCHEMA_ERROR',
+      'シート "' + CONST.SHEET_LOGS + '" の ' + LOG_OP_COL_ + ' 列目は op_id にしてください（今は "' + head + '"）。', 500);
+  }
+  cache.put(key, '1', CACHE_VERSION_SEC_);
 }
 
 /* ---------- 詳細画面用の履歴キャッシュ（PERF.md 項目 5） ----------
@@ -354,11 +513,13 @@ var LOG_CACHE_LIMIT_ = 30;
 
 /** 備品ごとの版のキー（備品キャッシュと同じく、版ごとに写しのキーを分ける） */
 function logVersionKey_(itemId) { return 'logs:v2:' + itemId + ':ver'; }
+/** 全備品の履歴に共通の版のキー。シートの直接編集（onSheetChange）で新しくし、全備品の履歴の写しを捨てる */
+var LOGS_GEN_KEY_ = 'logs:v2:gen';
 
 /** 備品の直近の履歴（新しい順、limit は LOG_CACHE_LIMIT_ まで） */
 function readItemLogs_(itemId, limit) {
   var cache = CacheService.getScriptCache();
-  var key = 'logs:v2:' + itemId + ':' + cacheVersion_(cache, logVersionKey_(itemId));
+  var key = 'logs:v2:' + itemId + ':' + cacheVersions_(cache, [LOGS_GEN_KEY_, logVersionKey_(itemId)]).join(':');
   var hit = cache.get(key);
   if (hit) {
     lap_('logs(cache)');

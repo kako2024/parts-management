@@ -8,6 +8,8 @@
  * - 持ち主（ログインしたメールアドレス）と GAS の URL を一緒に保存し、
  *   別のユーザー・別の環境のデータは返さない。
  * - ログアウト時・認証エラー時・別ユーザーでのログイン時に app.js が clear() を呼ぶ。
+ * - 一覧と各詳細に、サーバーで最後に確かめた時刻（confirmedAt）を持つ（PLAN-2 項目 3）。備品の更新日時
+ *   （updated_at）とは別物。画面は「いつ確かめた情報か」をこれで示す。
  * ------------------------------------------------------------------
  */
 (function () {
@@ -43,6 +45,7 @@
     var c = read();
     if (!c || c.apiUrl !== apiUrl) return null;
     if (email !== null && c.email !== String(email || '').toLowerCase()) return null;
+    if (!c.confirmedAt) c.confirmedAt = c.savedAt || null; // confirmedAt を持つ前のキャッシュ
     return c;
   }
 
@@ -56,8 +59,11 @@
     if (c && (c.apiUrl !== apiUrl || c.email !== String(email || '').toLowerCase())) clear();
   }
 
-  /** 一覧（絞り込みなし）と候補を保存する。持ち主が変わっていれば詳細も捨てる */
-  function saveList(apiUrl, email, items, meta) {
+  /**
+   * 一覧（絞り込みなし）と候補を保存する。持ち主が変わっていれば詳細も捨てる
+   * @param {number=} confirmedAt サーバーで確かめた時刻（省略時は今）
+   */
+  function saveList(apiUrl, email, items, meta, confirmedAt) {
     var owner = String(email || '').toLowerCase();
     var c = read();
     var keepDetails = c && c.apiUrl === apiUrl && c.email === owner;
@@ -65,18 +71,22 @@
       apiUrl: apiUrl,
       email: owner,
       savedAt: Date.now(),
+      confirmedAt: confirmedAt || Date.now(),
       meta: meta || (keepDetails ? c.meta : null),
       items: items,
       details: keepDetails ? (c.details || {}) : {}
     });
   }
 
-  /** 詳細（備品と履歴）を保存し、一覧の同じ備品も最新に置き換える */
-  function saveDetail(apiUrl, email, item, logs) {
+  /**
+   * 詳細（備品と履歴）を保存し、一覧の同じ備品も最新に置き換える（一覧の confirmedAt は変えない）
+   * @param {number=} confirmedAt サーバーで確かめた時刻（省略時は今）
+   */
+  function saveDetail(apiUrl, email, item, logs, confirmedAt) {
     var c = load(apiUrl, email);
     if (!c) return;
     c.details = c.details || {};
-    c.details[item.item_id] = { item: item, logs: logs, savedAt: Date.now() };
+    c.details[item.item_id] = { item: item, logs: logs, savedAt: Date.now(), confirmedAt: confirmedAt || Date.now() };
     var ids = Object.keys(c.details);
     if (ids.length > MAX_DETAILS) {
       ids.sort(function (a, b) { return c.details[a].savedAt - c.details[b].savedAt; });
@@ -95,14 +105,17 @@
     write(c);
   }
 
-  /** 手元にある備品と履歴を返す。履歴を持っていなければ logs は null */
+  /**
+   * 手元にある備品と履歴を返す。履歴を持っていなければ logs は null。
+   * confirmedAt は、その備品をサーバーで最後に確かめた時刻（詳細が無ければ一覧の時刻）
+   */
   function findItem(apiUrl, email, itemId) {
     var c = load(apiUrl, email);
     if (!c) return null;
     var d = c.details && c.details[itemId];
-    if (d) return { item: d.item, logs: d.logs };
+    if (d) return { item: d.item, logs: d.logs, confirmedAt: d.confirmedAt || d.savedAt || null };
     var it = (c.items || []).filter(function (x) { return x.item_id === itemId; })[0];
-    return it ? { item: it, logs: null } : null;
+    return it ? { item: it, logs: null, confirmedAt: c.confirmedAt } : null;
   }
 
   function upsert(items, item) {

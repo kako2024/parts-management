@@ -8,6 +8,7 @@
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/groups",
     "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/script.scriptapp",
     "https://www.googleapis.com/auth/userinfo.email"
   ],
   "webapp": {
