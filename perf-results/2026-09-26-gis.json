@@ -1,0 +1,1095 @@
+{
+ "env": {
+  "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+  "items": 2,
+  "photos": 2,
+  "rounds": 5,
+  "login": "Google",
+  "at": "2026-09-26T16:29:28.872Z"
+ },
+ "results": [
+  {
+   "phase": "A通常-1",
+   "cache": "あり",
+   "scene": "A 起動→一覧",
+   "ms": 4070,
+   "marks": "dcl=732 load=925 gis=687 credential=4041 cache=4041",
+   "note": "",
+   "at": "2026-09-26T14:43:03.891Z"
+  },
+  {
+   "phase": "A通常-1",
+   "cache": "あり",
+   "scene": "D 一覧写真",
+   "ms": 154,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T14:43:04.046Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 18,
+   "marks": "cache=1",
+   "note": "",
+   "at": "2026-09-26T14:43:06.114Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 451,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T14:43:06.566Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "API loginCheck",
+   "ms": 4489,
+   "marks": "gas=1974 parse=1 token(fetch)=207 group(lookup)=848 openSheet(items)=264 readItems(102rows)=485 items(store)=153 listItems=1 rest=15",
+   "note": "",
+   "at": "2026-09-26T14:43:08.386Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "API getItem",
+   "ms": 2274,
+   "marks": "gas=784 parse=2 token(cache)=108 group(cache)=82 items(cache)=77 openSheet(logs)=223 readLogs(404rows)=229 rest=63",
+   "note": "",
+   "at": "2026-09-26T14:43:08.390Z"
+  },
+  {
+   "phase": "B-1",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T14:43:09.093Z"
+  },
+  {
+   "phase": "B-1（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 1,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T14:43:09.093Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1561,
+   "marks": "gas=178 parse=2 token(cache)=45 group(cache)=48 items(cache)=59 rest=24",
+   "note": "",
+   "at": "2026-09-26T14:43:09.618Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "API getItem",
+   "ms": 1175,
+   "marks": "gas=51 parse=1 token(cache)=7 group(cache)=14 items(cache)=17 logs(cache)=11 rest=1",
+   "note": "",
+   "at": "2026-09-26T14:43:10.269Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "C 登録",
+   "ms": 4,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:43:10.286Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 4104,
+   "marks": "gas=107 parse=1 token(cache)=19 group(cache)=29 items(cache)=44 rest=14",
+   "note": "",
+   "at": "2026-09-26T14:43:13.261Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "API createItem",
+   "ms": 3093,
+   "marks": "gas=1713 parse=2 token(cache)=30 group(cache)=43 lock=235 openSheet(items)=328 readItems(102rows)=203 openSheet(logs)=33 findOp=73 appendItem=164 openSheet(logs)=64 appendLog=329 commitCache=168 rest=41",
+   "note": "",
+   "at": "2026-09-26T14:43:13.380Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "C 登録確定",
+   "ms": 3099,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:43:13.382Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "C ステータス更新",
+   "ms": 1,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:43:14.406Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "API updateStatus",
+   "ms": 3307,
+   "marks": "gas=1087 parse=1 token(cache)=38 group(cache)=51 lock=47 openSheet(items)=181 readItems(103rows)=199 openSheet(logs)=47 findOp=68 writeRow=76 openSheet(logs)=1 appendLog=204 commitCache=126 rest=48",
+   "note": "",
+   "at": "2026-09-26T14:43:17.713Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "C ステータス確定",
+   "ms": 3312,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:43:17.717Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "C 編集",
+   "ms": 3,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:43:18.910Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "API updateItem",
+   "ms": 4143,
+   "marks": "gas=2827 parse=1 token(cache)=109 group(cache)=140 lock=153 openSheet(items)=638 readItems(103rows)=297 openSheet(logs)=111 findOp=98 writeRow=116 openSheet(logs)=2 appendLog=386 commitCache=585 rest=191",
+   "note": "",
+   "at": "2026-09-26T14:43:23.054Z"
+  },
+  {
+   "phase": "C-1",
+   "cache": "あり",
+   "scene": "C 編集確定",
+   "ms": 4151,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:43:23.057Z"
+  },
+  {
+   "phase": "C-1（後片付け）",
+   "cache": "あり",
+   "scene": "API deleteItem",
+   "ms": 2242,
+   "marks": "gas=1148 parse=1 token(cache)=12 group(cache)=42 lock=76 openSheet(items)=161 readItems(103rows)=147 openSheet(logs)=79 findOp=71 writeRow=71 openSheet(logs)=3 appendLog=294 commitCache=112 rest=79",
+   "note": "",
+   "at": "2026-09-26T14:43:26.356Z"
+  },
+  {
+   "phase": "C-1（後片付け）",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1990,
+   "marks": "gas=714 parse=1 token(cache)=9 group(cache)=14 openSheet(items)=224 readItems(103rows)=267 items(store)=180 rest=19",
+   "note": "",
+   "at": "2026-09-26T14:43:28.351Z"
+  },
+  {
+   "phase": "A通常-2",
+   "cache": "あり",
+   "scene": "A 起動→一覧",
+   "ms": 3766,
+   "marks": "dcl=412 load=607 gis=393 credential=3760 cache=3760",
+   "note": "",
+   "at": "2026-09-26T14:55:03.000Z"
+  },
+  {
+   "phase": "A通常-2",
+   "cache": "あり",
+   "scene": "D 一覧写真",
+   "ms": 27,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T14:55:03.028Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 4,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T14:55:05.154Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 448,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T14:55:05.603Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "API loginCheck",
+   "ms": 3709,
+   "marks": "gas=1911 parse=2 token(fetch)=228 group(lookup)=796 openSheet(items)=406 readItems(103rows)=286 items(store)=175 listItems=0 rest=18",
+   "note": "",
+   "at": "2026-09-26T14:55:06.712Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "API getItem",
+   "ms": 2357,
+   "marks": "gas=935 parse=2 token(cache)=28 group(cache)=33 items(cache)=46 openSheet(logs)=402 readLogs(408rows)=364 rest=60",
+   "note": "",
+   "at": "2026-09-26T14:55:07.511Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "API getItems",
+   "ms": 1594,
+   "marks": "gas=162 parse=1 token(cache)=35 group(cache)=44 items(cache)=58 rest=24",
+   "note": "",
+   "at": "2026-09-26T14:55:08.742Z"
+  },
+  {
+   "phase": "B-2",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 3,
+   "marks": "cache=1",
+   "note": "",
+   "at": "2026-09-26T14:55:09.654Z"
+  },
+  {
+   "phase": "B-2（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 1,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T14:55:09.655Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "API getItem",
+   "ms": 1142,
+   "marks": "gas=95 parse=1 token(cache)=15 group(cache)=16 items(cache)=36 logs(cache)=27 rest=0",
+   "note": "",
+   "at": "2026-09-26T14:55:10.797Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "C 登録",
+   "ms": 3,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:55:10.853Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1268,
+   "marks": "gas=179 parse=1 token(cache)=7 group(cache)=55 items(cache)=96 rest=20",
+   "note": "",
+   "at": "2026-09-26T14:55:11.004Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "API createItem",
+   "ms": 3109,
+   "marks": "gas=1843 parse=1 token(cache)=25 group(cache)=51 lock=194 openSheet(items)=204 readItems(103rows)=259 openSheet(logs)=35 findOp=297 appendItem=237 openSheet(logs)=91 appendLog=251 commitCache=136 rest=62",
+   "note": "",
+   "at": "2026-09-26T14:55:13.963Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "C 登録確定",
+   "ms": 3115,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:55:13.965Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "C ステータス更新",
+   "ms": 1,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:55:15.054Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "API updateStatus",
+   "ms": 3608,
+   "marks": "gas=2378 parse=3 token(cache)=22 group(cache)=20 lock=60 openSheet(items)=251 readItems(104rows)=335 openSheet(logs)=106 findOp=790 writeRow=125 openSheet(logs)=3 appendLog=427 commitCache=191 rest=45",
+   "note": "",
+   "at": "2026-09-26T14:55:18.662Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "C ステータス確定",
+   "ms": 3612,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:55:18.665Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "C 編集",
+   "ms": 2,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:55:20.727Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "API updateItem",
+   "ms": 2664,
+   "marks": "gas=1504 parse=2 token(cache)=68 group(cache)=62 lock=110 openSheet(items)=194 readItems(104rows)=227 openSheet(logs)=130 findOp=94 writeRow=112 openSheet(logs)=2 appendLog=241 commitCache=206 rest=56",
+   "note": "",
+   "at": "2026-09-26T14:55:23.391Z"
+  },
+  {
+   "phase": "C-2",
+   "cache": "あり",
+   "scene": "C 編集確定",
+   "ms": 2668,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T14:55:23.394Z"
+  },
+  {
+   "phase": "C-2（後片付け）",
+   "cache": "あり",
+   "scene": "API deleteItem",
+   "ms": 2671,
+   "marks": "gas=1062 parse=1 token(cache)=31 group(cache)=41 lock=47 openSheet(items)=180 readItems(104rows)=188 openSheet(logs)=56 findOp=76 writeRow=75 openSheet(logs)=1 appendLog=190 commitCache=125 rest=51",
+   "note": "",
+   "at": "2026-09-26T14:55:26.132Z"
+  },
+  {
+   "phase": "C-2（後片付け）",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 2262,
+   "marks": "gas=694 parse=1 token(cache)=19 group(cache)=46 openSheet(items)=199 readItems(104rows)=206 items(store)=204 rest=19",
+   "note": "",
+   "at": "2026-09-26T14:55:28.398Z"
+  },
+  {
+   "phase": "A通常-3",
+   "cache": "あり",
+   "scene": "A 起動→一覧",
+   "ms": 3938,
+   "marks": "dcl=469 load=496 gis=590 credential=3933 cache=3933",
+   "note": "",
+   "at": "2026-09-26T15:07:03.326Z"
+  },
+  {
+   "phase": "A通常-3",
+   "cache": "あり",
+   "scene": "D 一覧写真",
+   "ms": 24,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T15:07:03.350Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 5,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T15:07:05.380Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 386,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T15:07:05.767Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "API loginCheck",
+   "ms": 3815,
+   "marks": "gas=2318 parse=1 token(fetch)=192 group(lookup)=796 openSheet(items)=259 readItems(104rows)=870 items(store)=191 listItems=0 rest=9",
+   "note": "",
+   "at": "2026-09-26T15:07:07.144Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "API getItem",
+   "ms": 2692,
+   "marks": "gas=1160 parse=3 token(cache)=39 group(cache)=50 openSheet(items)=293 readItems(104rows)=199 items(store)=262 openSheet(logs)=42 readLogs(412rows)=203 rest=69",
+   "note": "",
+   "at": "2026-09-26T15:07:08.073Z"
+  },
+  {
+   "phase": "B-3",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 2,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T15:07:08.444Z"
+  },
+  {
+   "phase": "B-3（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 0,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T15:07:08.445Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1286,
+   "marks": "gas=196 parse=1 token(cache)=46 group(cache)=48 items(cache)=78 rest=22",
+   "note": "",
+   "at": "2026-09-26T15:07:08.660Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "C 登録",
+   "ms": 4,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:07:08.728Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "API getItem",
+   "ms": 1295,
+   "marks": "gas=210 parse=1 token(cache)=40 group(cache)=53 items(cache)=70 logs(cache)=46 rest=0",
+   "note": "",
+   "at": "2026-09-26T15:07:09.741Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1801,
+   "marks": "gas=143 parse=1 token(cache)=37 group(cache)=38 items(cache)=51 rest=16",
+   "note": "",
+   "at": "2026-09-26T15:07:10.325Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "API createItem",
+   "ms": 3982,
+   "marks": "gas=2511 parse=2 token(cache)=32 group(cache)=48 lock=189 openSheet(items)=251 readItems(104rows)=730 openSheet(logs)=54 findOp=113 appendItem=265 openSheet(logs)=97 appendLog=539 commitCache=153 rest=38",
+   "note": "",
+   "at": "2026-09-26T15:07:12.711Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "C 登録確定",
+   "ms": 3988,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:07:12.713Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "C ステータス更新",
+   "ms": 1,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:07:13.860Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "API updateStatus",
+   "ms": 3121,
+   "marks": "gas=1937 parse=1 token(cache)=78 group(cache)=94 lock=138 openSheet(items)=297 readItems(105rows)=296 openSheet(logs)=36 findOp=111 writeRow=120 openSheet(logs)=1 appendLog=388 commitCache=237 rest=140",
+   "note": "",
+   "at": "2026-09-26T15:07:16.982Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "C ステータス確定",
+   "ms": 3124,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:07:16.984Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "C 編集",
+   "ms": 1,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:07:18.081Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "API updateItem",
+   "ms": 2576,
+   "marks": "gas=1378 parse=2 token(cache)=41 group(cache)=56 lock=82 openSheet(items)=182 readItems(105rows)=226 openSheet(logs)=105 findOp=80 writeRow=95 openSheet(logs)=2 appendLog=186 commitCache=118 rest=203",
+   "note": "",
+   "at": "2026-09-26T15:07:20.658Z"
+  },
+  {
+   "phase": "C-3",
+   "cache": "あり",
+   "scene": "C 編集確定",
+   "ms": 2581,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:07:20.660Z"
+  },
+  {
+   "phase": "C-3（後片付け）",
+   "cache": "あり",
+   "scene": "API deleteItem",
+   "ms": 2212,
+   "marks": "gas=1043 parse=1 token(cache)=21 group(cache)=23 lock=32 openSheet(items)=200 readItems(105rows)=251 openSheet(logs)=37 findOp=78 writeRow=85 openSheet(logs)=2 appendLog=170 commitCache=102 rest=41",
+   "note": "",
+   "at": "2026-09-26T15:07:23.882Z"
+  },
+  {
+   "phase": "C-3（後片付け）",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 2600,
+   "marks": "gas=1417 parse=1 token(cache)=24 group(cache)=33 openSheet(items)=369 readItems(105rows)=507 items(store)=445 rest=38",
+   "note": "",
+   "at": "2026-09-26T15:07:26.485Z"
+  },
+  {
+   "phase": "A通常-4",
+   "cache": "あり",
+   "scene": "A 起動→一覧",
+   "ms": 3787,
+   "marks": "dcl=473 load=657 gis=448 credential=3781 cache=3781",
+   "note": "",
+   "at": "2026-09-26T15:19:01.032Z"
+  },
+  {
+   "phase": "A通常-4",
+   "cache": "あり",
+   "scene": "D 一覧写真",
+   "ms": 31,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T15:19:01.063Z"
+  },
+  {
+   "phase": "B-4",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 4,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T15:19:03.080Z"
+  },
+  {
+   "phase": "B-4",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 403,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T15:19:03.484Z"
+  },
+  {
+   "phase": "B-4",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 1,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T15:19:04.763Z"
+  },
+  {
+   "phase": "B-4（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 0,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T15:19:04.763Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API loginCheck",
+   "ms": 3815,
+   "marks": "gas=2166 parse=0 token(fetch)=189 group(lookup)=736 openSheet(items)=274 readItems(105rows)=766 items(store)=186 listItems=0 rest=15",
+   "note": "",
+   "at": "2026-09-26T15:19:04.850Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "C 登録",
+   "ms": 3,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:19:04.966Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API getItem",
+   "ms": 2756,
+   "marks": "gas=1168 parse=1 token(cache)=12 group(cache)=32 openSheet(items)=258 readItems(105rows)=289 items(store)=179 openSheet(logs)=23 readLogs(416rows)=324 rest=50",
+   "note": "",
+   "at": "2026-09-26T15:19:05.837Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1198,
+   "marks": "gas=157 parse=1 token(cache)=33 group(cache)=46 items(cache)=63 rest=14",
+   "note": "",
+   "at": "2026-09-26T15:19:05.861Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API getItem",
+   "ms": 1233,
+   "marks": "gas=205 parse=1 token(cache)=52 group(cache)=40 items(cache)=75 logs(cache)=37 rest=0",
+   "note": "",
+   "at": "2026-09-26T15:19:05.997Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1378,
+   "marks": "gas=212 parse=3 token(cache)=38 group(cache)=57 items(cache)=103 rest=11",
+   "note": "",
+   "at": "2026-09-26T15:19:06.207Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API createItem",
+   "ms": 4281,
+   "marks": "gas=2870 parse=1 token(cache)=82 group(cache)=144 lock=280 openSheet(items)=369 readItems(105rows)=351 openSheet(logs)=122 findOp=180 appendItem=381 openSheet(logs)=160 appendLog=396 commitCache=253 rest=151",
+   "note": "",
+   "at": "2026-09-26T15:19:09.248Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "C 登録確定",
+   "ms": 4286,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:19:09.249Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "C ステータス更新",
+   "ms": 1,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:19:10.267Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API updateStatus",
+   "ms": 4202,
+   "marks": "gas=2682 parse=2 token(cache)=75 group(cache)=137 lock=157 openSheet(items)=345 readItems(106rows)=370 openSheet(logs)=55 findOp=188 writeRow=196 openSheet(logs)=1 appendLog=626 commitCache=375 rest=155",
+   "note": "",
+   "at": "2026-09-26T15:19:14.470Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "C ステータス確定",
+   "ms": 4205,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:19:14.472Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "C 編集",
+   "ms": 2,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:19:15.723Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "API updateItem",
+   "ms": 4108,
+   "marks": "gas=2806 parse=1 token(cache)=104 group(cache)=166 lock=179 openSheet(items)=408 readItems(106rows)=383 openSheet(logs)=149 findOp=193 writeRow=179 openSheet(logs)=3 appendLog=582 commitCache=265 rest=194",
+   "note": "",
+   "at": "2026-09-26T15:19:19.832Z"
+  },
+  {
+   "phase": "C-4",
+   "cache": "あり",
+   "scene": "C 編集確定",
+   "ms": 4116,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:19:19.836Z"
+  },
+  {
+   "phase": "C-4（後片付け）",
+   "cache": "あり",
+   "scene": "API deleteItem",
+   "ms": 2987,
+   "marks": "gas=1556 parse=5 token(cache)=49 group(cache)=47 lock=45 openSheet(items)=266 readItems(106rows)=273 openSheet(logs)=113 findOp=131 writeRow=169 openSheet(logs)=3 appendLog=240 commitCache=160 rest=55",
+   "note": "",
+   "at": "2026-09-26T15:19:24.199Z"
+  },
+  {
+   "phase": "C-4（後片付け）",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 2216,
+   "marks": "gas=902 parse=1 token(cache)=23 group(cache)=27 openSheet(items)=233 readItems(106rows)=267 items(store)=296 rest=55",
+   "note": "",
+   "at": "2026-09-26T15:19:26.419Z"
+  },
+  {
+   "phase": "A通常-5",
+   "cache": "あり",
+   "scene": "A 起動→一覧",
+   "ms": 3959,
+   "marks": "dcl=600 load=821 gis=574 credential=3952 cache=3953",
+   "note": "",
+   "at": "2026-09-26T15:31:01.232Z"
+  },
+  {
+   "phase": "A通常-5",
+   "cache": "あり",
+   "scene": "D 一覧写真",
+   "ms": 38,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T15:31:01.271Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "B 一覧→詳細",
+   "ms": 4,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T15:31:03.290Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 460,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T15:31:03.750Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "API loginCheck",
+   "ms": 5121,
+   "marks": "gas=2917 parse=11 token(fetch)=383 group(lookup)=913 openSheet(items)=858 readItems(106rows)=394 items(store)=337 listItems=0 rest=21",
+   "note": "",
+   "at": "2026-09-26T15:31:06.358Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "API getItem",
+   "ms": 3151,
+   "marks": "gas=1573 parse=2 token(cache)=36 group(cache)=69 openSheet(items)=352 readItems(106rows)=326 items(store)=185 openSheet(logs)=42 readLogs(420rows)=471 rest=90",
+   "note": "",
+   "at": "2026-09-26T15:31:06.441Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "API getItems",
+   "ms": 1047,
+   "marks": "gas=97 parse=1 token(cache)=13 group(cache)=31 items(cache)=36 rest=16",
+   "note": "",
+   "at": "2026-09-26T15:31:06.986Z"
+  },
+  {
+   "phase": "B-5",
+   "cache": "なし",
+   "scene": "B ID入力→詳細",
+   "ms": 4,
+   "marks": "cache=0",
+   "note": "",
+   "at": "2026-09-26T15:31:08.054Z"
+  },
+  {
+   "phase": "B-5（参考）",
+   "cache": "なし",
+   "scene": "D 詳細写真",
+   "ms": 1,
+   "marks": "",
+   "note": "1枚",
+   "at": "2026-09-26T15:31:08.056Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "API getItem",
+   "ms": 1406,
+   "marks": "gas=219 parse=1 token(cache)=44 group(cache)=52 items(cache)=75 logs(cache)=47 rest=0",
+   "note": "",
+   "at": "2026-09-26T15:31:09.464Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 1517,
+   "marks": "gas=370 parse=1 token(cache)=55 group(cache)=105 items(cache)=167 rest=42",
+   "note": "",
+   "at": "2026-09-26T15:31:09.708Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "C 登録",
+   "ms": 3,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:31:10.282Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "API createItem",
+   "ms": 3226,
+   "marks": "gas=2115 parse=1 token(cache)=46 group(cache)=50 lock=236 openSheet(items)=304 readItems(106rows)=296 openSheet(logs)=54 findOp=133 appendItem=275 openSheet(logs)=98 appendLog=364 commitCache=197 rest=61",
+   "note": "",
+   "at": "2026-09-26T15:31:13.509Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "C 登録確定",
+   "ms": 3233,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:31:13.512Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "C ステータス更新",
+   "ms": 1,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:31:14.680Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "API updateStatus",
+   "ms": 2423,
+   "marks": "gas=1396 parse=1 token(cache)=19 group(cache)=36 lock=54 openSheet(items)=210 readItems(107rows)=333 openSheet(logs)=95 findOp=124 writeRow=111 openSheet(logs)=3 appendLog=224 commitCache=143 rest=43",
+   "note": "",
+   "at": "2026-09-26T15:31:17.103Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "C ステータス確定",
+   "ms": 2428,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:31:17.107Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "C 編集",
+   "ms": 7,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:31:17.894Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "API updateItem",
+   "ms": 3280,
+   "marks": "gas=1957 parse=9 token(cache)=28 group(cache)=29 lock=46 openSheet(items)=295 readItems(107rows)=360 openSheet(logs)=206 findOp=162 writeRow=276 openSheet(logs)=3 appendLog=278 commitCache=206 rest=59",
+   "note": "",
+   "at": "2026-09-26T15:31:21.176Z"
+  },
+  {
+   "phase": "C-5",
+   "cache": "あり",
+   "scene": "C 編集確定",
+   "ms": 3291,
+   "marks": "",
+   "note": "",
+   "at": "2026-09-26T15:31:21.178Z"
+  },
+  {
+   "phase": "C-5（後片付け）",
+   "cache": "あり",
+   "scene": "API deleteItem",
+   "ms": 3789,
+   "marks": "gas=2489 parse=1 token(cache)=88 group(cache)=94 lock=153 openSheet(items)=377 readItems(107rows)=381 openSheet(logs)=49 findOp=150 writeRow=137 openSheet(logs)=1 appendLog=628 commitCache=241 rest=189",
+   "note": "",
+   "at": "2026-09-26T15:31:25.083Z"
+  },
+  {
+   "phase": "C-5（後片付け）",
+   "cache": "あり",
+   "scene": "API getItems",
+   "ms": 2299,
+   "marks": "gas=879 parse=1 token(cache)=22 group(cache)=17 openSheet(items)=290 readItems(107rows)=370 items(store)=163 rest=16",
+   "note": "",
+   "at": "2026-09-26T15:31:27.385Z"
+  },
+  {
+   "phase": "Aキャッシュなし-1",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 4274,
+   "marks": "dcl=933 load=1141 gis=901 credential=4269 cache=4269",
+   "note": "",
+   "at": "2026-09-26T15:43:03.274Z"
+  },
+  {
+   "phase": "Aキャッシュなし-1",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 598,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T15:43:03.872Z"
+  },
+  {
+   "phase": "Aキャッシュなし-2",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 4309,
+   "marks": "dcl=958 load=1163 gis=924 credential=4302 cache=4302",
+   "note": "",
+   "at": "2026-09-26T15:54:39.410Z"
+  },
+  {
+   "phase": "Aキャッシュなし-2",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 399,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T15:54:39.809Z"
+  },
+  {
+   "phase": "Aキャッシュなし-3",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 4481,
+   "marks": "dcl=1027 load=1235 gis=978 credential=4474 cache=4474",
+   "note": "",
+   "at": "2026-09-26T16:06:15.622Z"
+  },
+  {
+   "phase": "Aキャッシュなし-3",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 353,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T16:06:15.976Z"
+  },
+  {
+   "phase": "Aキャッシュなし-4",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 4276,
+   "marks": "dcl=930 load=1133 gis=898 credential=4269 cache=4269",
+   "note": "",
+   "at": "2026-09-26T16:17:51.525Z"
+  },
+  {
+   "phase": "Aキャッシュなし-4",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 1175,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T16:17:52.701Z"
+  },
+  {
+   "phase": "Aキャッシュなし-5",
+   "cache": "なし",
+   "scene": "A 起動→一覧",
+   "ms": 4245,
+   "marks": "dcl=879 load=1075 gis=849 credential=4238 cache=4238",
+   "note": "",
+   "at": "2026-09-26T16:29:28.249Z"
+  },
+  {
+   "phase": "Aキャッシュなし-5",
+   "cache": "なし",
+   "scene": "D 一覧写真",
+   "ms": 404,
+   "marks": "",
+   "note": "2枚",
+   "at": "2026-09-26T16:29:28.654Z"
+  }
+ ],
+ "problems": [],
+ "warnings": [],
+ "leftovers": []
+}
