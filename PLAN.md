@@ -315,3 +315,16 @@ userの「スマホでパーツを選択したときは写真を縦に並べず�
 
 - skill の選択: 公開前にskill-pickerへ「承認済みスマホ横スクロールを既存main:/docsへ公開して配信/実モバイル確認」と伝えpublish-to-pagesを選択、本文を読み既存Pagesの更新として使用。既存repo/HTMLアプリのため変換/新規repo作成/publish.shは対象外。userの本番反映許可が継続しており再確認不要。コミット/記録への切替にもpickerを実行して同skillを使用、単純な事実追記に合う専用skillなし。
 - 公開準備: git fetch origin mainの結果、HEAD/origin/mainともf8ea6c9でリモート新変更なし。gh認証と既存Pagesのmain:/docsを確認。承認済み5ファイルのみをステージし、ユーザーの未追跡.codexを含めない。GASとデータの変更はない。前の画面へ戻す際は公開元f8ea6c9のdocsへ戻す。
+
+- 公開: 承認済み5ファイルを96e9be7へコミットし、既存origin/mainへpush成功。Pagesワークフロー37474813667でbuild/deployともsuccess、公開コミット96e9be7・status builtを確認。
+- 公開確認のskill選択: skill-pickerへ「配信7ファイル照合とモックなしの実CDN/GISモバイルを並列確認」と伝えwebapp-testingを選択、既読手順を使用。既存Node/Playwrightと読み取りAPIなのでPython/補助サーバーへの置換は不要。
+- 確認の結果: 2本を並列に開始して成功。公開docs7ファイルすべてHTTP200/SHA256一致、390×844の実CDN/GIS/モバイル画面でGoogleボタン、日本語、スタイル、写真上限4/期限設定、アプリの認証前非表示、画面横はみ出しなし、JSエラー/通信失敗なし。本番APIの認証なしgetItemsはAUTH_REQUIRED/401。/tmp/parts-production-mobile.pngも画像確認。HEAD/origin/mainは96e9be7で一致、公開差分は5ファイルのみ、GAS不変、.codexは未追跡のまま。製品コードは項目12承認後に変更していないため全モバイル成功結果を使用。
+- 未確認: 正規tokenでの本番ログイン後の写真操作、実機iOS/Android/Safari/実読み上げ。模擬での写真操作の成功と、同じ製品コードの本番配信一致を区別する。認証省略なし。
+- 記録/最終レビュー依頼のskill選択: skill-pickerへ「公開結果と未確認をPLAN/PHOTOに追記してreviewerへ最終確認を依頼」と伝え、事実追記に合う専用skillなし、連絡はagmsgを選択し公式send.shを使用。
+- レビューの指摘と対応: 初回依頼。
+- reviewerの承認: 2026-10-06 14:02:44 UTC、追加項目13承認。指摘なし。独立したリモート/公開版/Pages/配信7ファイル/実モバイルを確認。docs/gas16ファイルは項目12承認時とSHA256一致。
+
+- reviewer側の観測と記録対応: 初回の認証なしgetItemsはok:trueという想定外応答でブラウザ確認exit1。本文/リダイレクト詳細を初回に採取していないため原因未確定。失敗したブラウザ確認だけの単独再実行ではPOST→302→googleusercontent GET/200、ok:false・AUTH_REQUIRED・401、errors/failed空でexit0。初回の原因や認証回避の有無は断定しない。GASソースは全actionで認証を通し今回不変、公開GETは稼働応答ok:trueになることを静的照合した。mainの初回並列確認は401/成功。事実の追記を求めるレビューに従いこの観測を記録した。
+- 最終記録/完了処理のskill選択: skill-pickerへ「reviewerの観測と承認を照合して記録だけ公開し、最終ビルド確認と完了通知」と伝えreceiving-code-review → publish-to-pages → agmsgを選択、receiving本文を読み使用、残りは既読手順を使用。製品修正は求められておらず行わない。文書2ファイルだけを確定/push後にbuild成功を確認し、reviewerへ12〜13全完了連絡とuser指定agmsg-team doneでuser/ntfy通知する。メンバーcloseはしない。
+
+追加依頼12〜13はすべてreviewer承認済み。スマホ幅の詳細/追加・編集の写真横スクロールを本番へ反映し、全モバイル操作・配信7ファイル・実CDNの確認を完了した。
