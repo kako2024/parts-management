@@ -274,3 +274,13 @@ userの2026-10-06の追加指示「本番環境への反映を行って。改善
 - skill の選択: 調査前のskill-pickerへ「リモートmain安全統合、承認済み変更のコミット/Pages公開/配信とモバイルを確認」と伝え、publish-to-pages → scope-creep-detector → webapp-testingを選択。publish/scope本文とscope-signalsを実際に読み、既存repo・Pagesのmain:/docsを更新するので新規repo/変換/publish.shは対象外。コミット/公開の許可はuser追加指示に含まれる。統合/記録への切替にもpickerを実行し、Git統合自体に合う専用skillなし、公開はpublish-to-pagesを使用する。
 - 範囲確認: working treeの14変更ファイル・4領域（文書/テスト/docs/gas）1421追加/186削除、大きい5hunkを検出。新依存/API名変更/CI変更/整形だけのファイルなし。単語一致で候補となった12ファイルはすべてkeep（PLAN/README/SETUPは要求された記録/仕様/反映、harness/UIは写真・回復の回帰、app/config/indexは写真/期限/入力名、Config/Op/Repositoryは上限/操作記録/互換/採番）。大型hunkは写真保存/片付け/下書きの一体性を理由に維持、項目ごとのreviewer承認を確認。新規PHOTOと写真/API回帰・模擬計測も承認済みの目的に含む。
 - ステージ確認: 新規を含め19ファイル2292追加/186削除。新規計測スクリプト末尾空白1件をdiff --cached --check単独で再現し除去（動作不変）。秘匿設定検査の子プロセスEPERMを権限付きで単独再実行して成功、実設定混入なし。各調査/対応切替前にskill-picker/systematic-debuggingを使用。
+- 統合/公開: e408d54に承認済み19ファイルをコミット。origin/mainの9d6f8b0を競合なくmergeし8250ce4、ローカルmainをfast-forward。統合後docs/gasはe408d54と差分ゼロ、origin/mainが祖先、本番秘匿設定の混入なし（公開差分24ファイル）を並列確認してからgit push origin main成功。既存のPERF/RELIABILITY/PLAN-2の作業ブランチ上の記録は改変なし。ユーザーの.codexはステージせず未追跡のまま。
+- 公開確認のskill選択: 切替前のskill-pickerでwebapp-testingを選び、モックなしの実CDN/GIS/本番APIへPlaywrightで接続。既存NodeのPlaywrightを利用しPython/補助ローカルサーバーへの置換は不要。gh run listの--branch未対応はsystematic-debuggingを選んで原因確認し、対応形式へ直して失敗確認だけ単独成功。
+- 確認: Pagesのbuild/deployはコミット8250ce4・ワークフロー37466374745でsuccess。公開docs7ファイル全てHTTP200/SHA256一致と実モバイルブラウザを並列確認して成功。390×844でログイン/GISボタン/日本語/スタイル/4枚/期限の設定と認証前にアプリが隠れること、横はみ出しなし・JSエラーなし・通信失敗なし、本番APIへ認証なしgetItemsはAUTH_REQUIRED/401を確認。/tmp/parts-production-mobile.pngを見て画面も確認。実CDN/GISが正常だったためCDN同梱は今回は見送り。製品コードは統合で不変なので項目9の84件/隔離6件/全モバイル成功結果を使用し不要な性能再計測は行わない。
+- 未確認: 正規Googleアカウントでの本番ログイン後の写真登録/編集・実復元、実機OSのアルバム/HEIC/実読み上げ。本番の正規tokenは取得していない。認証省略なし。
+- 記録/依頼のskill選択: skill-pickerへ「公開結果と未確認を記録しreviewerへ最終レビュー依頼」と伝え、文書同期に合う専用skillなし、連絡はagmsgを選択し既読の公式send.shを使用。
+- レビューの指摘と対応: 初回依頼。
+- reviewerの承認: 2026-10-06 13:03:08 UTC、追加項目11承認、指摘なし。祖先/製品16ファイル不変/公開差分の秘匿設定なし/Pages成功/配信7ファイル一致/実モバイル画面と401を独立確認。正規token本番写真操作・復元・実機の未確認を維持。
+- 完了処理のskill選択: skill-pickerへ「最終承認を記録だけコミット/push、ビルド成功確認後にreviewer完了連絡とuser/ntfyへ指定done通知」と伝えpublish-to-pages → agmsgを選択、既読手順を使用する。製品コードの変更はなく、メンバーのcloseは行わない。
+
+追加依頼9〜11はすべてreviewer承認済み。本番GAS版24とmain:/docsの画面反映・バックアップ・公開確認は完了。承認記録のみを確定してから、指定の `agmsg-team done --team parts-management` で通知する。
