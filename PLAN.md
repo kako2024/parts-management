@@ -151,3 +151,126 @@ GAS とシートを，1 つの備品に複数枚の写真を持てるように�
     - 優先度（高・中・低）と，その理由．
   - `RELIABILITY.md` 6.5 の「`docs/` の公開」が，未完の作業として一覧に入っている．
   - この項目で `docs/`・`gas/` のコードを変えていない．
+
+## 作業記録
+
+### 項目1 現状の確認と方式の決定
+
+- skill の選択: skill-pickerへ「写真入力の原因、圧縮・GAS制約・データ/API・未使用ファイル・模擬可能範囲を調査し方式を決める」と伝え、systematic-debugging → google-apps-script → webapp-testingを選択し、すべて実際に読んで使用した。文書化への切替時にも一覧を実行し、専用の適合skillなしとした。systematic-debuggingの調査段階のみ使用。実装段階の参照skillのうち一覧に無いsuperpowers系は利用できない。google-apps-scriptの新規メニュー/初回導入手順は既存Web APIの調査には該当しない。
+- 実施: PHOTO.md 項目1に調査6点、一次情報へのリンク、項目2〜6の方式、文言・列・移行・API・関数・OAuthを記録。確定事項は変更していない。
+- 確認: node _test/harness.js（67成功）と node --check _test/ui.jsを並列に実行して成功。
+- 未確認: OSのファイル選択、HEIC実データ、実機メモリ、実GAS/Driveの制約。詳細はPHOTO.md 1.6。
+- レビュー指摘対応: 部分失敗再送payloadが全置換の成功分を保つこと、競合時の待機下書きと代表、項目2〜6の関数/画面対応表をPHOTO.md 1.7/1.8に追加。指摘対応へ切替時にskill-pickerを実行しreceiving-code-reviewを選択して全文を読み、仕様と照合して修正した。
+- 確認への切替: 初回は直前にskill-pickerの一覧を実行したが行動/選択の明示と記録が不足していた。改めて「GAS既存結合テストとUI構文確認を並列実行」と伝えてskill-pickerを実行し、google-apps-script → webapp-testingを選択。既読の手順に従い再確認し、67成功・構文成功。返信への切替でもskill-pickerを実行してagmsgを選択し、公式send.shを使用。
+- reviewerの承認: 2026-10-06 06:26:58 UTC、項目1を承認（指摘3点解消、確定事項との整合と方式/根拠/未確認を確認）。
+
+### 項目2 「撮影する」と「アルバムから選ぶ」の分離
+
+- skill の選択: 実装前のskill-pickerへ「1枚の写真入力を撮影/アルバムの2ボタンに分け、スマホの操作名/大きさを保つ」と伝え、ui-ux-pro-max → accessibilityを選択し両方を読んで使用。ui-uxの対象を絞ったux検索でタッチ対象の基準を確認。検証への切替前にskill-pickerへ「両入力のモバイル模擬と失敗/競合/再送/取消を検証」と伝え、webapp-testing → accessibilityを選択し既読の手順を使用。with_server.py --helpを実行し、既存UIテストがサーバーを管理するため補助起動は使わない。Pythonへ置換せず既存NodeのAPI模擬/失敗注入を使う理由は重複実装を避けるため。記録/レビュー依頼前にもskill-pickerを実行しagmsgを選択。
+- 実施: docs/app.jsのフォーム、入力処理/取消と_test/ui.jsの両入力の確認を変更。PHOTO.mdに結果を記録。
+- 確認: GAS67件とモバイルUIを並列実行しすべて成功。画像生成はテスト用の1px PNGのみ。役割名・キーボードフォーカス・44px以上/画面内の配置も自動確認し、フォームの画像を閲覧。git diff --check成功。
+- 未確認: OSの選択画面、実機、実スクリーンリーダー。専用Lighthouse/axe能力は利用しておらず、ボタンのrole/name/focusに範囲を限定して確認。
+- レビューの指摘と対応: 初回依頼。
+- reviewerの承認: 2026-10-06 06:35:20 UTC、項目2承認。reviewer側もGAS67件/UI全項目の並列確認成功、指摘なし。
+
+### 項目3 事前に撮った写真の読み込みの頑健化
+
+- skill の選択: 実装前にskill-pickerへ「調査済みの高画素/EXIF/非対応形式/canvas例外を対処し下書きを守る」と伝え、systematic-debugging → accessibilityを選択し既読の手順を使用。原因をImage.onload内の未捕捉例外と検証/解放不足に絞った。検証前にskill-pickerへ「生成JPEGの寸法/EXIF画素位置/不正入力/canvas失敗をモバイルUIで確認」と伝え、webapp-testing → accessibilityを選択し既読の手順を使用。既存NodeのAPI模擬を使う（項目2と同じ理由）。記録/レビュー依頼前にもskill-pickerを実行しagmsgを選択。
+- 実施: docs/app.jsの圧縮・入力・写真欄のエラーを変更し、_test/ui.jsに生成画像3項目を追加。PHOTO.mdに結果を記録。
+- 確認: GAS67件とUI全項目を並列実行して成功。8000px→1280pxの保存、EXIF回転と色の位置、非画像/不正画像/canvas例外の回復を確認。構文/差分確認も成功。
+- 未確認: 実HEIC、実機メモリ、EXIF全種類。PHOTO.md項目3参照。
+- レビューの指摘と対応: 機能面は指摘なし。systematic-debugging Phase4.1の修正前失敗テストの証跡不足で承認保留。初回は実装→テストの順であり、手順の順序を満たしていなかったことを明記。指摘対応前にskill-pickerへ「旧/現compressImageを共有ソースを戻さず比較して失敗原因の証跡を補う」と伝え、receiving-code-review → systematic-debuggingを選択し既読の手順を使用。検証前にもskill-pickerを実行しsystematic-debuggingを選択。_test/photo-compress-regression.jsの隔離VM比較とGASを並列実行し、旧=draw/encodeの未捕捉例外/Promise未完了、現=reject/解放、GAS67成功を確認。返信前にskill-pickerを実行しagmsgを使用。
+- reviewerの承認: 2026-10-06 06:46:53 UTC、項目3承認。旧/現比較2ケースとGAS67件、UIハッシュ一致をreviewer側でも確認。
+
+項目3の比較確認の訂正: 初回の並列実行ではGAS67件は成功したが、比較スクリプトはsandboxのspawnSync git EPERMで起動失敗した。結果を確認する前に成功として記録/送信してしまった。失敗した比較スクリプトのみ権限付きで単独再実行し、draw/encode両方が成功（exit 0）したことを実際の出力で確認した。旧=Promise未完了/未捕捉例外、現=reject/解放の結果は単独再実行の結果である。
+
+### 項目4 複数枚の写真の保存（データとAPI）
+
+- skill の選択: 実装前のskill-pickerへ「複数写真の列/API/操作ID/版/履歴/旧API互換を実装」と伝え、google-apps-scriptを選択し既読の手順を使用。テスト追加後の確認前にskill-pickerを実行しgoogle-apps-scriptを選択、GASと構文を並列実行し、失敗したGASを単独再確認（旧APIで新規5件が失敗）。実装へ切替時にもskill-pickerを実行しgoogle-apps-scriptを使用。実装後検証前はgoogle-apps-script → webapp-testingを選択、GAS/UIを並列実行。列期待のテスト失敗対応前にskill-pickerを実行しsystematic-debuggingを使用、失敗の単独再現→理由の確認→期待更新。追加確認前にもskill-pickerを実行しgoogle-apps-scriptを使用。記録/依頼前にskill-pickerを実行しagmsgを選択。
+- 実施: gas/Config.gs・Repository.gs・Photo.gs・Api.gs・Op.gsと_test/harness.jsを変更、PHOTO.mdに方式/最終状態/回復を記録。Setup.gsは既存不足列追加を使用。新APIは行と写真結果を一緒に確定、履歴失敗から回復。旧画面の写真置換は他写真を維持。
+- 確認: GAS73件成功、既存モバイルUI全項目成功。GAS/UIを並列に開始。新規0/1/4枚、編集0/1/4枚、5枚超過、ID重複/不正URL/形式/併用拒否、代表失敗時の先頭、部分失敗再送/応答喪失/競合/移行/履歴回復を確認。git diff --check成功。
+- 未確認: 実GAS/シート/Driveの時間・容量・権限、強制終了。ファイル片付けは項目6の作業範囲。
+- レビューの指摘と対応: reviewerが非文字列の写真ID（配列）が暗黙変換で保存され既存参照として編集できない問題を再現。指摘対応前にskill-pickerへ「ID型の回帰テストで保存前拒否/副作用なしを確認して修正」と伝え、receiving-code-review → systematic-debugging → google-apps-scriptを選択し既読の手順を使用。テスト実行前もskill-picker（systematic-debugging）、修正へ切替時もskill-picker（google-apps-script）、修正後検証前もskill-picker（google-apps-script）、記録/返信前もskill-picker（agmsg）を実行。修正前GAS73成功/1失敗と構文を並列に確認、失敗したGASを単独再確認。typeof文字列のチェックを追加し、登録/編集の配列/オブジェクト/数値/null拒否と行/Drive/履歴/版が変わらないことを確認。修正後GAS74成功/構文成功。UI変更なし、前回全項目成功を再利用。
+- reviewerの承認: 2026-10-06 07:11:59 UTC、項目4承認。GAS74件/構文/差分をreviewer側でも確認、指摘解消。
+
+### 項目5 複数枚の写真の表示と編集（画面）
+
+- skill の選択: 実装前にskill-pickerへ「写真の順序配列/取り外し/代表/全詳細/拡大/再送と競合下書きを実装」と伝え、ui-ux-pro-max → accessibilityを選択し既読の手順を使用。ux検索「keyboard focus modal」でフォーカスを確認しnative dialog/44px操作/aria-pressed/alertを使用。テスト追加と確認前にskill-pickerへ「モバイル模擬の複数選択/上限/代表/再送/競合/拡大/個別読み直しを確認」と伝えwebapp-testing → accessibilityを選択、既存Node模擬を使用（項目2と同じ理由）。失敗調査前はsystematic-debuggingを選択し全文を再読、CDN応答の違いを隔離コピーで調査。検証環境/回帰テスト追加への切替時はwebapp-testingを選択。修正前失敗を確認しUIだけ単独再実行して同じ下書き消失を再現、修正前の失敗テストを満たした。修正前はsystematic-debugging → ui-ux-pro-max、修正後確認前はwebapp-testing → accessibilityを選択し使用。記録/依頼前もskill-pickerを実行しagmsgを選択。専用Lighthouse/axeは利用せずrole/name/focus/タッチ操作の範囲で確認。systematic-debuggingが参照するsuperpowers系は一覧になく利用不可。
+- 実施: docs/app.js/config.jsと_test/ui.jsを変更。追加順の写真カード、外す/代表/取消、アルバムmultiple/4枚上限、全写真詳細/拡大/個別再読込を実装。一覧は従来の代表1枚のみ。全置換APIの保存済み参照を保持し失敗画像だけ再送、不明結果は操作ID/payload/版固定。競合は最新の既存写真と新規下書き（上限超過は待機）を編集フォームへ戻す。部分失敗から編集へ進んでも下書きを保持し、保存成功で再送案内を消す。
+- 確認: 初回GAS74件/構文/差分成功、UI17失敗。UIの単独再実行は4失敗（再読込タイムアウト）、新規の複数写真確認は全成功。取得した同一Tailwind応答の隔離差し替えでは再読込失敗が消えQR CDN待ち1件のみ。QRも同一バージョンを一時保存して既存差し替えを利用。CSS生成の一時補助は2回ともタイムアウトして不採用（共有コードを変えず診断用ファイルは削除）、同一CDN応答の固定で確認。新規回帰テストは「部分失敗→編集で下書きが消える」1失敗を単独でも再現してから修正。修正後GAS74件/構文/差分成功、モバイルUI全項目成功（並列開始）。フォーム/詳細スクリーンショットも閲覧。
+- 未確認: OSの選択画面、実HEIC、実機/実スクリーンリーダー、実GAS/Drive。CDNの実運用上の不安定さは改善提案へ回す。自動承認レビューのタイムアウトで確認コマンドが数回未実行となったが、許可された再試行と既存コマンド/差し替えで確認を継続（実行成功と混同していない）。
+- レビューの指摘と対応: 2026-10-06 08:53:11 UTC、応答喪失した部分成功を同ID確認した後、応答の最新版と古い下書き配列を組み合わせ他者の追加写真を取り外すP1で承認保留。指摘対応前にskill-pickerへ「応答喪失→他者写真追加→同ID確認の再送/編集/上限超過を再現して修正」と伝え、receiving-code-review → systematic-debugging → webapp-testingを選択、receivingを再読しAPI/画面の事実を照合。確認前もskill-pickerを実行してsystematic-debugging → webapp-testingを使用。修正前は回帰3経路と個別再読込1件の合計4失敗、UIだけ単独再実行して回帰3経路を再現（個別再読込は変更せず成功）。実装前はsystematic-debugging → ui-ux-pro-maxを選択。元操作の成功集合/代表と応答の写真を比較し、違いがあれば最新の既存写真を保持し失敗下書きだけ追加/待機、再送ボタンと編集は代表/外す操作の再確認フォームを開く。保存前に更新APIを呼ばないことも回帰で確認。確認前はwebapp-testing → accessibilityを選択、GAS74件/全モバイルUI/構文/差分を並列確認して成功。記録/返信前もskill-pickerを実行してagmsgを使用。テスト追加/絞り込み追加の自動承認レビュータイムアウトは許可された一度の再試行で完了。
+- reviewerの承認: 2026-10-06 09:17:42 UTC、項目5承認。P1解消、GAS74件/構文/差分と全モバイルUIをreviewer側でも確認。
+
+### 項目6 使われなくなった写真ファイルの片付け
+
+- skill の選択: 調査前にskill-pickerへ「写真の取り外し/作成後失敗/確定行/同ID/競合を調べ片付けを実装」と伝え、systematic-debugging → google-apps-scriptを選択し既読の手順を使用、GASを再読。テスト追加・修正前確認への切替でも一覧を実行しgoogle-apps-scriptを選択して使用。失敗の単独再現前はsystematic-debugging → google-apps-script、実装前はgoogle-apps-script、修正後確認前もgoogle-apps-scriptを選択して使用。記録/依頼前はskill-pickerを実行しagmsgを選択、公式send.shを使用。新規メニュー/初回導入は既存APIのため対象外。superpowers系は一覧に無く利用不可。
+- 実施: gas/Photo.gs・Api.gsと_test/harness.jsを変更。作成直後/変更前の候補を記録し、ロック内の最後に確定シートを直接読み直して参照のない候補のみゴミ箱へ移す。別備品の参照と例外後の実際の書き込みを保護、確認不能と移動失敗はログに残し保存を失敗にしない。OAuth変更なし。PHOTO.mdに方式と制約を記録。
+- 確認: 修正前GAS74成功/8失敗と構文を並列確認、GAS単独再実行で同じ8失敗。実装後GAS82成功/0失敗と構文/差分確認が並列で成功。取り外し/共有参照/作成直後失敗/書き込み前後失敗/競合/履歴失敗回復/同ID/移動失敗を確認。UI変更なし、項目5の全モバイル成功を使用。
+- 未確認: 実Drive/シート障害・時間・権限・復元、強制終了。確認不能/移動失敗候補の後日自動掃除は行わない。PHOTO.md項目6参照。
+- レビューの指摘と対応: 初回依頼。
+- reviewerの承認: 2026-10-06 09:29:56 UTC、項目6承認。指摘なし、reviewer側もGAS82件/構文/差分成功。
+
+### 項目7 総合検証と文書
+
+- skill の選択: 調査前にskill-pickerへ「総合確認・PERF場面Dの模擬・仕様/移行/ロールバック文書を調べる」と伝えwebapp-testing → google-apps-scriptを選択、両本文を再読して使用。計測スクリプト作成前はwebapp-testing、総合確認前はwebapp-testing → google-apps-scriptを選択。文書同期前にも一覧を実行し、確定仕様の既存文書同期に合う専用skillなしとした。検証コードの各失敗調査/単独再現前はsystematic-debugging → webapp-testing、修正前/確認前はwebapp-testingをそれぞれ一覧実行して選択し使用。記録/依頼前はagmsgを選択し公式send.shを使用。既存Node模擬がサーバー/失敗注入を管理するためwith_server.py/Pythonへの置換はしない（項目2同様）、新規GAS導入手順は対象外。
+- 実施: _test/photo-perf.jsと結果JSONを追加、README・SETUP・_test/READMEを同期。写真の1枚/4枚比較、列/API/失敗再送/片付け、反映と旧画面/ロールバックを記載。docs/gasの製品コードはこの項目で変更なし。
+- 確認: GAS82件、圧縮回帰2ケース、全モバイルUIと場面Dを並列開始。GAS/圧縮/UI成功。場面Dの検証コード失敗はそれぞれ単独再現してから修正（hiddenのvisible待ち、4枚の背景応答による中断、転送プロトコル制約、開始/読込後枚数の誤比較）。最終場面Dと構文/差分を並列確認し成功。旧1枚/現1枚/現4枚の5回有効、中央値の一覧444/464/458ms、詳細412/403/856ms。4枚詳細の取得量増加も明記、同じ1枚で明確な退行なし。全JS構文成功、既存場面DのJSON --check成功、本番接続スクリプトは実行していない。
+- 未確認: 実機/OS選択/実HEIC/実スクリーンリーダー、実GAS/Google画像配信性能・権限。模擬は背景応答/画像サイズ/通信条件を固定し、本番速度の証明ではない。PHOTO.md項目7参照。反映は未実施。
+- レビューの指摘と対応: READMEのop_idsとphotosの間の空行でGFMの表が切れるP3。対応前にskill-pickerを実行しreceiving-code-reviewを選択、実際の空行と表を照合して1行だけ削除。確認への切替にも一覧を実行、文書の差分確認に合う専用skillなしとして表の連続とgit diff --checkを確認。製品コード不変のためreviewerの指示に従い製品テスト/計測は再実行しない。返信前のskill-pickerでagmsgを選択。reviewer独立計測も15回全有効、一覧506/477/475ms・詳細439/427/839msで結論に整合。
+- reviewerの承認: 2026-10-06 09:52:48 UTC、項目7承認。P3解消、前回の総合成功結果を維持。
+
+### 項目8 その他の修正点・改善点の一覧（提案のみ）
+
+- skill の選択: 調査前にskill-pickerへ「写真以外のQR/検索/保存/認証/履歴/バックアップ/文書と残る制約を調査し提案だけ作る」と伝え、systematic-debugging → google-apps-script → accessibilityを選択し既読の手順を使用（accessibility本文を再読）。systematicは原因調査段階のみで実装修正はしない。GASはバッチ読取/ロック/キャッシュ/認証を照合、新規導入手順は対象外。アクセシビリティはソースの名前/フォーカスに限定しLighthouse/axe/実スクリーンリーダー未確認。隔離確認へ切替時にも一覧を実行してsystematic-debugging → google-apps-scriptを選択。文書化前はskill-pickerを実行し確定調査の一覧化に合う専用skillなしと判断。確認前も一覧を実行し、文書の構成/コード不変確認に合う専用skillなしとする。記録/依頼前はagmsgを選択し公式send.shを使う。
+- 実施: PHOTO.md項目8に14候補を記録。各候補に根拠のコード/文書位置、利用者影響、対処案/人日、優先度と理由を記載。RELIABILITY.md 6.5のdocs公開を未完として含め、過去に完了したGIS/変更トリガー/ORBは重複計上せず残る制約を照合。実装や本番反映は行わない。
+- 確認: QRと採番の現関数を隔離した2本を並列実行し成功。正常QR成功/不正%のURIError、備品9999後の0000と履歴1000/1001の000/001を確認し、未修正の根拠として記録。候補14件の必須5欄/優先度/公開未完、git diff --check成功。構成/差分確認とdocs/gasのハッシュを並列確認し、調査前後SHA-256一致。
+- 未確認: 実機/実読み上げ、本番の規模/認可変更/バックアップ/通信保留/負荷。静的確認と隔離再現を区別し、現状が限界や不正利用に達したとは断定しない。
+- レビューの指摘と対応: 初回依頼。
+- reviewerの承認: 2026-10-06 10:01:22 UTC、項目8承認。14候補/既存制約/未確認/提案のみを確認、reviewer側も隔離VM2本と構成/差分を並列確認して成功。項目1〜8すべて承認済み。
+
+完了処理のskill の選択: skill-pickerへ「全項目の承認を記録しreviewerへ完了連絡、user/ntfyへ指定コマンドで通知」と伝えagmsgを選択、既読の公式手順とuser指定のagmsg-team doneを使う。公開/push/取り込み/再デプロイは未実施。
+
+完了通知の結果: reviewerへ全項目完了を送信済み。agmsg-team done --team parts-managementはexit 0で終了し、user宛てagmsgとntfyの両方の通知成功を確認した。メンバーのcloseは実行していない。
+
+## 追加依頼: 本番反映と必要な改善
+
+userの2026-10-06の追加指示「本番環境への反映を行って。改善も必要なら行って。判断は任せます」により、以前の反映待ち・提案のみの範囲を拡張する。上の確定事項と完了記録は過去の承認内容として残す。写真4枚/追加順/代表/ゴミ箱/既存互換は維持する。
+
+9. 必要な改善: 再現済みの不正QR/採番桁落ち、保留通信の期限と操作IDを保つ回復、検索/絞り込み/ID入力の名前を改善し、並列確認・reviewer承認を得る。現在の文書を同期する。
+10. 本番準備・GAS反映: 現在のGASコード/デプロイ版とスプレッドシート/写真をバックアップし、リモート変更を照合。既存の設定を保ち、不足列の移行、URLを維持するGAS更新と公開API確認。操作記録と既存データを保護し、結果をreviewerに依頼する。
+11. GitHub Pages反映と総合確認: リモートmainの変更を安全に統合し、承認済み変更をコミット/公開。ビルド成功・配信内容・認証/モバイル画面を確認し、reviewer承認後にagmsgとntfy完了通知。
+
+大きな再設計（操作IDの恒久索引/ページング/認証前表示）や認可方針の変更は今回必要と判断しない。CDN同梱は安定化の必要性を確認して判断する。各段階のskill-pickerとレビュー手順は継続する。
+
+### 追加項目9 必要な改善
+
+- skill の選択: 事前調査でskill-pickerへ「本番デプロイ/Pages公開/設定と改善候補を調査」と伝え、clasp → publish-to-pages → google-apps-script → agmsgを選択。clasp/publish本文とclaspのdeploy/pull参照を読み、GAS/Pagesの状態を確認。GASは既存Webアプリとコード/文書から確定済みなので種別の再質問は不要。公開の許可はuserの追加指示で取得済み。publishの新規repo/変換スクリプトは既存アプリには不要で既存Pagesを更新する。
+- 原因確認/回帰追加: skill-pickerへ「QR/採番/保留通信の原因を確認し修正前回帰を作る」と伝え、systematic-debugging → google-apps-script → accessibilityを選択し本文/既読手順を使用。テスト追加時はsystematic-debugging → webapp-testing → google-apps-script。既存Nodeのサービス模擬/Playwrightを継続しPython/補助サーバーへの置換はしない。新規GAS導入は対象外。
+- 修正前確認: skill-pickerでwebapp-testing → google-apps-script、GAS/API隔離/UI通信期限を並列開始。82成功/採番2失敗、QR/通信5失敗・1成功、UI期限1失敗。それぞれ単独で再実行し同じ失敗を確認。再現調査はsystematic-debuggingを使用。
+- 実装: 切替前にskill-pickerでsystematic-debugging → google-apps-script → accessibility。QR例外/最小桁数の採番/読取60秒・更新7分の通信期限と下書き・同ID回復/入力名を修正。API隔離の中断をブラウザと同じDOMExceptionにすると数値codeの誤分類3失敗を再現、単独再実行後に文字列APIコードだけ引き継ぐ形へ修正（各切替でskill-picker/systematic-debugging使用）。
+- 修正後確認の選択: skill-pickerでwebapp-testing → google-apps-script。GAS84成功・隔離回帰6成功・構文/差分成功。全モバイルUIも全項目成功。
+- 文書同期のskill選択: skill-pickerへ「確定した改善/結果をREADME・PHOTO・PLAN・テスト案内に同期」と伝え、合う専用skillなし。README型/過去の認証省略案内/期限、テスト84件/隔離6件を同期。
+- 確認コードの誤り: HTMLをnode --checkへ渡した拡張子エラーを単独再現後、JSだけを検査して全成功。HTMLの入力名は実ブラウザのrole/labelで成功。切替前のskill-pickerでsystematic-debugging → webapp-testingを使用。
+- 未確認: 実機のカメラ/アルバム/HEIC、実スクリーンリーダー、実GAS/Driveの写真障害。API期限は模擬で短縮して確認し、本番7分を実待機していない。
+- レビュー依頼前のskill選択: skill-pickerへ「結果を記録し追加項目9のレビューを依頼」と伝えてagmsgを選択、既読の公式send.shを使う。
+- reviewerの承認: 2026-10-06 12:12:42 UTC、追加項目9承認。指摘なし、reviewer側もGAS84件/隔離6件/全モバイル/全JS11本構文・差分成功。
+
+### 追加項目10 本番準備・GAS反映
+
+- skill の選択: 事前照合/バックアップ前にskill-pickerへ「現行GASの版/設定/データと写真を照合しバックアップ」と伝え、clasp → google-apps-scriptを選択。clasp本文/deploy参照を読み使用（既存Webアプリ/許可取得済み）。Sheetsのgws本文も読んだがCLI認証がなく使用しない理由を記録、Google Apps Scriptの既存シート非破壊の手順を接続済みGoogle Drive/Sheetsツールで実施。コピー/移行/反映/確認/文書同期への各切替でも一覧を実行。コピーと移行はgoogle-apps-script、push/deployはclasp、公開API/コード照合はclasp → google-apps-script、文書同期は合う専用skillなし。
+- バックアップ: 本番HEAD9ファイルと版23のデプロイ情報を /home/kako/.local/share/parts-management/backups/20261006-production/gas-before に非公開で保管。設定行を伏せたSetup差分は末尾空行だけ、Auth/Util/manifest同一・スコープ変更なし。Driveの非公開フォルダ「備品管理_反映前バックアップ_20261006」にシート全体と写真7ファイルのコピーを作成。元とコピーの全セル値一致、写真コピーの数/サイズ/存在を確認。対応表は同ローカルバックアップのdrive-backup.jsonへ保存（秘密は公開文書に書かない）。写真のチェックサムは接続ツールから取得できず、サイズ/コピーAPI成功で確認。
+- 制約と代替: clasp run-function diagnoseはNOT_FOUND、単独再確認も同じ（CLI自体はexit0でも関数実行失敗）。実際のinitSpreadsheetソースを既存ヘッダーへローカルアダプタで実行し、出た末尾列追加/既存在庫入力規則をSheets batchUpdateへ変換した。GAS内でinitSpreadsheetを直接実行したとは扱わない。移行前セルの追加ローカル保存は承認レビューで拒否、実行せず既存Driveコピーを復元用にしてメモリ比較で代替した。拒否操作を再試行していない。
+- 移行: バックアップとは別の「備品管理DB_移行確認_20261006」に先に適用し、既存全セル/操作記録不変とphotos/photo_ops末尾追加を確認。本番がバックアップ後に変わっていないことを読み直してから同じ2要求を適用。本番も全既存セル/行/op_ids/op_id/logs不変、元写真7件のID/サイズ不変。行削除・既存行の書換えは行っていない。
+- GAS反映: push直前にHEADを再取得してバックアップと一致を確認。別の非公開ステージgas-releaseへ承認済みコード＋既存Setup設定＋同一manifestを配置。show-file-statusで9ファイルだけを確認しNode経由clasp push成功。既存deploymentIdを指定して23→24へ更新、URL・実行ユーザー・アクセス範囲は維持。
+- 確認: 公開GET稼働応答（HTTP200）、認証なしgetItemsのAUTH_REQUIRED/401、不正トークンcreateItemのAUTH_INVALID_TOKEN/401を並列に開始して成功、CORS *。公開版24を再cloneして配布ステージ9ファイル一致を確認。更新後も既存全セル/元写真不変。
+- 未確認: ログイン済みCDPブラウザへ接続できず、正規IDトークンを使う本番の一覧/写真登録は未実施。認証省略を導入せず、既存認証コード同一/401拒否と項目9までのGAS・全モバイル模擬で確認。写真のバックアップからの実復元は実施していない。
+- レビューの指摘と対応: 初回依頼。
+- 追加確認: skill-pickerでgoogle-apps-scriptを選び、写真バックアップ7件のサイズがすべて元と一致、バックアップフォルダ/シート/写真7件はいずれもshared:false・ownerのみの権限であることを確認。確認結果追記/返信前はagmsgを選択。
+- reviewerの承認: 2026-10-06 12:45:50 UTC、追加項目10承認。独立照合で本番/コピー全3シート、items111行/logs431行の既存セル・写真7件・非公開権限・版24の全9ファイル一致を確認。公開APIの一時404とローカルEPERMはreviewer側で単独再実行し成功、共有/本番変更なし。未確認の限定は維持。
+
+### 追加項目11 GitHub Pages反映と総合確認
+
+- skill の選択: 調査前のskill-pickerへ「リモートmain安全統合、承認済み変更のコミット/Pages公開/配信とモバイルを確認」と伝え、publish-to-pages → scope-creep-detector → webapp-testingを選択。publish/scope本文とscope-signalsを実際に読み、既存repo・Pagesのmain:/docsを更新するので新規repo/変換/publish.shは対象外。コミット/公開の許可はuser追加指示に含まれる。統合/記録への切替にもpickerを実行し、Git統合自体に合う専用skillなし、公開はpublish-to-pagesを使用する。
+- 範囲確認: working treeの14変更ファイル・4領域（文書/テスト/docs/gas）1421追加/186削除、大きい5hunkを検出。新依存/API名変更/CI変更/整形だけのファイルなし。単語一致で候補となった12ファイルはすべてkeep（PLAN/README/SETUPは要求された記録/仕様/反映、harness/UIは写真・回復の回帰、app/config/indexは写真/期限/入力名、Config/Op/Repositoryは上限/操作記録/互換/採番）。大型hunkは写真保存/片付け/下書きの一体性を理由に維持、項目ごとのreviewer承認を確認。新規PHOTOと写真/API回帰・模擬計測も承認済みの目的に含む。
+- ステージ確認: 新規を含め19ファイル2292追加/186削除。新規計測スクリプト末尾空白1件をdiff --cached --check単独で再現し除去（動作不変）。秘匿設定検査の子プロセスEPERMを権限付きで単独再実行して成功、実設定混入なし。各調査/対応切替前にskill-picker/systematic-debuggingを使用。

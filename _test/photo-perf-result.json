@@ -1,0 +1,375 @@
+{
+  "env": {
+    "at": "2026-10-06T09:42:46.091Z",
+    "browser": "153.0.8010.12",
+    "baseline": "1e5c47ecb1b3277463dc9145f5cd6f97e27d7fc5",
+    "rounds": 5,
+    "viewport": "430x932",
+    "fast4G": {
+      "offline": false,
+      "latency": 165,
+      "downloadThroughput": 1012500,
+      "uploadThroughput": 168750
+    },
+    "cache": "無効",
+    "items": 20,
+    "photoItems": 20,
+    "imageBytes": {
+      "thumb": 2111,
+      "detail": 142387
+    },
+    "getItemDelayMs": 10000,
+    "cdn": "同じ保存済み応答",
+    "cpu": "既定（PERF.mdと同じ）",
+    "api": "ローカル模擬"
+  },
+  "summary": [
+    {
+      "variant": "old1",
+      "listMedian": 444,
+      "detailMedian": 412
+    },
+    {
+      "variant": "new1",
+      "listMedian": 464,
+      "detailMedian": 403
+    },
+    {
+      "variant": "new4",
+      "listMedian": 458,
+      "detailMedian": 856
+    }
+  ],
+  "results": [
+    {
+      "variant": "old1",
+      "round": 1,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 441,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:41:55.385Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 401,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:41:55.900Z"
+      },
+      "listVisible": 7,
+      "listRequests": 17,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new1",
+      "round": 1,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 464,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:41:58.764Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 375,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:41:59.296Z"
+      },
+      "listVisible": 7,
+      "listRequests": 17,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new4",
+      "round": 1,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 453,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:01.996Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 808,
+        "marks": "",
+        "note": "4枚",
+        "at": "2026-10-06T09:42:02.966Z"
+      },
+      "listVisible": 7,
+      "listRequests": 15,
+      "detailVisible": 3,
+      "detailAtStart": 4
+    },
+    {
+      "variant": "old1",
+      "round": 2,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 444,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:05.714Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 384,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:06.233Z"
+      },
+      "listVisible": 7,
+      "listRequests": 18,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new1",
+      "round": 2,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 457,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:09.120Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 413,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:09.647Z"
+      },
+      "listVisible": 7,
+      "listRequests": 16,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new4",
+      "round": 2,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 498,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:12.522Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 856,
+        "marks": "",
+        "note": "4枚",
+        "at": "2026-10-06T09:42:13.495Z"
+      },
+      "listVisible": 7,
+      "listRequests": 13,
+      "detailVisible": 3,
+      "detailAtStart": 4
+    },
+    {
+      "variant": "old1",
+      "round": 3,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 429,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:16.216Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 441,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:16.794Z"
+      },
+      "listVisible": 7,
+      "listRequests": 13,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new1",
+      "round": 3,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 483,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:19.565Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 403,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:20.094Z"
+      },
+      "listVisible": 7,
+      "listRequests": 18,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new4",
+      "round": 3,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 475,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:23.472Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 827,
+        "marks": "",
+        "note": "4枚",
+        "at": "2026-10-06T09:42:24.433Z"
+      },
+      "listVisible": 7,
+      "listRequests": 17,
+      "detailVisible": 3,
+      "detailAtStart": 4
+    },
+    {
+      "variant": "old1",
+      "round": 4,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 489,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:27.420Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 438,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:27.974Z"
+      },
+      "listVisible": 7,
+      "listRequests": 18,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new1",
+      "round": 4,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 440,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:30.970Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 437,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:31.517Z"
+      },
+      "listVisible": 7,
+      "listRequests": 15,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new4",
+      "round": 4,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 433,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:34.587Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 857,
+        "marks": "",
+        "note": "4枚",
+        "at": "2026-10-06T09:42:35.575Z"
+      },
+      "listVisible": 7,
+      "listRequests": 13,
+      "detailVisible": 3,
+      "detailAtStart": 4
+    },
+    {
+      "variant": "old1",
+      "round": 5,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 511,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:38.548Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 412,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:39.108Z"
+      },
+      "listVisible": 7,
+      "listRequests": 18,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new1",
+      "round": 5,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 466,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:41.803Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 396,
+        "marks": "",
+        "note": "1枚",
+        "at": "2026-10-06T09:42:42.308Z"
+      },
+      "listVisible": 7,
+      "listRequests": 14,
+      "detailVisible": 1,
+      "detailAtStart": 1
+    },
+    {
+      "variant": "new4",
+      "round": 5,
+      "list": {
+        "scene": "D 一覧写真",
+        "ms": 458,
+        "marks": "",
+        "note": "7枚",
+        "at": "2026-10-06T09:42:45.048Z"
+      },
+      "detail": {
+        "scene": "D 詳細写真",
+        "ms": 869,
+        "marks": "",
+        "note": "4枚",
+        "at": "2026-10-06T09:42:46.033Z"
+      },
+      "listVisible": 7,
+      "listRequests": 13,
+      "detailVisible": 3,
+      "detailAtStart": 4
+    }
+  ]
+}

@@ -71,15 +71,15 @@
           <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
           </svg>
-          <input id="search-input" type="search" inputmode="search" placeholder="備品名・ID・場所で検索"
+          <input id="search-input" aria-label="備品を検索" type="search" inputmode="search" placeholder="備品名・ID・場所で検索"
                  class="w-full h-11 pl-10 pr-3 rounded-xl border border-slate-300 bg-white text-base
                         focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent">
         </div>
         <div class="flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
           <button id="btn-restock" class="chip-btn" aria-pressed="false">要補充</button>
-          <select id="filter-status" class="chip-select"><option value="">在庫: すべて</option></select>
-          <select id="filter-category" class="chip-select"><option value="">カテゴリ: すべて</option></select>
-          <select id="filter-location" class="chip-select"><option value="">場所: すべて</option></select>
+          <select id="filter-status" aria-label="在庫で絞り込む" class="chip-select"><option value="">在庫: すべて</option></select>
+          <select id="filter-category" aria-label="カテゴリで絞り込む" class="chip-select"><option value="">カテゴリ: すべて</option></select>
+          <select id="filter-location" aria-label="場所で絞り込む" class="chip-select"><option value="">場所: すべて</option></select>
           <button id="btn-clear-filter" class="chip-btn">クリア</button>
         </div>
         <p id="list-count" class="text-xs text-slate-500 px-0.5"></p>
@@ -103,7 +103,7 @@
           備品ラベルの QR コードを枠内に写してください。
         </p>
         <div class="pt-2 border-t border-slate-200">
-          <label class="block text-sm font-medium mb-1.5">読み取れないときは備品IDを直接入力</label>
+          <label for="manual-id" class="block text-sm font-medium mb-1.5">読み取れないときは備品IDを直接入力</label>
           <div class="flex gap-2">
             <input id="manual-id" type="text" placeholder="ITEM-0001" autocapitalize="characters"
                    class="flex-1 h-12 px-3 rounded-xl border border-slate-300 bg-white text-base

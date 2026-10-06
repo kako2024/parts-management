@@ -35,9 +35,9 @@
     scanner: null,
     scanning: false,
     pendingItemId: null,  // ログイン前に ?item= で指定された備品
-    photoDraft: null,     // { data, mimeType, filename, previewUrl }
+    photoDraft: null,     // { photos: [{id,url}|{id,photo,previewUrl}], primary, waiting }
     formOp: null,         // 結果を確認できなかった保存の操作。フォームから送り直すときに同じ操作 ID を使う
-    photoRetry: null,     // 登録で保存できなかった写真 { itemId, photo, op }。詳細の「写真だけ送り直す」で使う
+    photoRetry: null,     // 部分失敗した下書きと保存済み参照、固定した版/再送payload
     formBase: null,       // 編集フォームを開いたときの備品。変えた項目だけを送り、その版（version）を添える
     // 情報の新しさ（PLAN-2 項目 3）。status: none / checking（確認中）/ fresh / offline（通信できない）/ error
     // confirmedAt はサーバーで最後に確かめた時刻（備品の updated_at とは別）。listKey は表示中の一覧の絞り込み
@@ -138,37 +138,51 @@
     var stale = function () { return state.session !== session; };
     var never = function () { return new Promise(function () {}); };
 
+    // PHOTO.md 項目9: 応答と本文の両方に期限を設ける。保存は期限後も実行済みの可能性がある。
+    var writing = ['createItem', 'updateItem', 'updateStatus', 'deleteItem'].indexOf(action) >= 0;
+    var configured = Number(writing ? CFG.API_WRITE_TIMEOUT_MS : CFG.API_READ_TIMEOUT_MS);
+    var timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : (writing ? 420000 : 60000);
+    var controller = new AbortController();
+    var timedOut = false;
+    var timer = setTimeout(function () { timedOut = true; controller.abort(); }, timeoutMs);
+
     return fetch(CFG.GAS_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: body,
-      redirect: 'follow'
+      redirect: 'follow',
+      signal: controller.signal
     }).then(function (res) {
-      return res.text().then(function (text) {
-        if (stale()) return never();
-        var json;
-        try {
-          json = JSON.parse(text);
-        } catch (e) {
-          PERF.api(action, Math.round(performance.now() - sentAt));
-          throw {
-            code: 'BAD_RESPONSE',
-            message: 'サーバーの応答を解析できませんでした。GAS のデプロイ設定（アクセスできるユーザー = 全員）を確認してください。'
-          };
-        }
-        PERF.api(action, Math.round(performance.now() - sentAt), json.timing);
-        if (!json.ok) {
-          var err = json.error || { code: 'UNKNOWN', message: '不明なエラー' };
-          if (err.status === 401) handleAuthExpired(err.message);
-          throw err;
-        }
-        return json.data;
-      });
-    }, function () {
+      return res.text();
+    }).then(function (text) {
+      clearTimeout(timer);
       if (stale()) return never();
+      var json;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        PERF.api(action, Math.round(performance.now() - sentAt));
+        throw {
+          code: 'BAD_RESPONSE',
+          message: 'サーバーの応答を解析できませんでした。GAS のデプロイ設定（アクセスできるユーザー = 全員）を確認してください。'
+        };
+      }
+      PERF.api(action, Math.round(performance.now() - sentAt), json.timing);
+      if (!json.ok) {
+        var err = json.error || { code: 'UNKNOWN', message: '不明なエラー' };
+        if (err.status === 401) handleAuthExpired(err.message);
+        throw err;
+      }
+      return json.data;
+    }).catch(function (err) {
+      clearTimeout(timer);
+      if (stale()) return never();
+      if (err && typeof err.code === 'string') throw err;
       throw {
         code: 'NETWORK_ERROR',
-        message: 'サーバーに接続できませんでした。通信環境と GAS_API_URL の設定を確認してください。'
+        message: timedOut
+          ? 'サーバーの応答が時間内に完了しませんでした。通信環境を確認して再試行してください。'
+          : 'サーバーに接続できませんでした。通信環境と GAS_API_URL の設定を確認してください。'
       };
     });
   }
@@ -891,10 +905,13 @@
   function renderDetail(item, logs, opts) {
     var pending = !!(opts && opts.pending);
     var dis = pending ? ' disabled' : '';
-    var photo = item.photo_url
-      ? '<img src="' + esc(detailPhotoUrl(item.photo_url)) + '" alt="' + esc(item.name) + '" decoding="async"' + PHOTO_REFERRER + ' ' +
-        'class="w-full aspect-[4/3] object-cover bg-slate-200">'
-      : '<div class="w-full aspect-[4/3] bg-slate-200 flex items-center justify-center text-6xl">📦</div>';
+    var photos = itemPhotos(item);
+    var photo = photos.length ? photos.map(function (p, i) {
+      return '<figure data-detail-photo="' + esc(p.id) + '" class="bg-white">' + detailImage(p, item.name, i) +
+        '<figcaption class="flex items-center justify-between px-4 py-2 text-sm">写真' + (i + 1) +
+        (p.url === item.photo_url ? ' ・ 代表' : '') +
+        '<button data-photo-expand="' + esc(p.id) + '" class="h-11 px-3 rounded-lg bg-slate-100" aria-label="写真' + (i + 1) + 'を拡大">拡大</button></figcaption></figure>';
+    }).join('') : '<div class="w-full aspect-[4/3] bg-slate-200 flex items-center justify-center text-6xl">📦</div>';
 
     var statusButtons = state.meta.stockStatuses.map(function (s) {
       var sel = (s === item.stock_status) ? statusSelectedClass(s) : '';
@@ -964,48 +981,68 @@
   }
 
   /**
-   * 登録で保存できなかった写真があれば、写真だけを送り直すボタンを出す（PLAN-2 項目 1）。
-   * その後に写真が付いていたら（他の人が付けたなど）出さない（上書きしないため）
+   * 部分失敗の下書きがあれば、保存できなかった写真番号と再送ボタンを出す（PHOTO.md 項目5）。
    */
   function photoRetryPanel(item, dis) {
     var pr = state.photoRetry;
-    if (!pr || pr.itemId !== item.item_id || item.photo_url) return '';
-    return '' +
-      '  <div id="photo-retry" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">' +
-      '    <p class="text-sm text-amber-900">写真を保存できませんでした。選んだ写真はこの画面に残っています。</p>' +
-      '    <button id="btn-photo-retry" class="w-full h-11 rounded-xl bg-amber-600 text-white font-semibold active:bg-amber-700 disabled:opacity-50"' + dis + '>写真だけ送り直す</button>' +
-      '  </div>';
+    if (!pr || pr.itemId !== item.item_id) return '';
+    var failed = pr.draft.photos.concat(pr.draft.waiting).filter(function (p) { return p.photo; });
+    return '<div id="photo-retry" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">' +
+      '<p class="text-sm text-amber-900">' + failed.length + '枚の写真を保存できませんでした。選んだ写真はこの画面に残っています。</p>' +
+      failed.map(function (p, i) {
+        return '<p class="text-sm">写真' + (pr.failedNumbers ? pr.failedNumbers[i] : pr.draft.photos.indexOf(p) + 1) + 'を保存できませんでした</p>';
+      }).join('') +
+      (pr.needsReview ? '<p class="text-sm">他の人が写真を変更していました。代表と外す操作を編集フォームで確認してください。</p>' : '') +
+      '<button id="btn-photo-retry" class="w-full h-11 rounded-xl bg-amber-600 text-white font-semibold disabled:opacity-50"' + dis + '>写真だけ送り直す</button></div>';
   }
 
-  /**
-   * 保存できなかった写真だけを送る（ほかの項目は送らないので、その間の他の人の変更を上書きしない）。
-   * 結果を確認できなかったときは、次に押したときも同じ操作 ID で送る（写真を二重に保存しない）。
-   */
+  // PHOTO.md 項目5: 成功済み写真はURL参照で保持し、失敗分だけ画像データを送り直す。
+  // 応答不明なら操作ID・payload・版を固定する。他者の変更は必ず競合として再判断する。
   function retryPhoto() {
     var pr = state.photoRetry;
     var item = state.currentItem;
     var logs = state.currentLogs;
-    if (!pr || !item || pr.itemId !== item.item_id || item.photo_url || state.saving) return;
+    if (!pr || !item || pr.itemId !== item.item_id || state.saving) return;
+    if (pr.needsReview || pr.draft.waiting.length) {
+      return openForm(item, null, { values: item, photo: mergePhotoDraft(item, pr.draft),
+        conflict: [{ key: 'photos', theirs: '最新の写真', mine: '失敗下書きを保持。代表と外す操作は再確認してください' }] });
+    }
     var op = pr.op || newOp();
-    pr.op = null;
+    var payload = pr.payload || {
+      item_id: item.item_id, photos: photoPayload(pr.draft.photos),
+      primary_photo_id: pr.draft.primary, base_version: pr.baseVersion
+    };
+    pr.op = op;
+    pr.payload = payload;
     state.saving = true;
     noteLocalWrite(item.item_id);
     var rev = showDetail(item, logs, { pending: true });
-    sendOp('updateItem', {
-      item_id: item.item_id,
-      photo: { data: pr.photo.data, mimeType: pr.photo.mimeType, filename: pr.photo.filename },
-      base_version: item.version
-    }, op)
+    sendOp('updateItem', payload, op)
       .then(function (data) {
         state.saving = false;
         if (state.photoRetry === pr) state.photoRetry = null;
+        var showing = stillShowing(rev);
         applySaved(data.item, data.log, logs, rev);
+        if (data.photoError) return onPhotoNotSaved(data.item, pr.draft, showing, data.photoErrors);
         toast('写真を保存しました', 'success');
       })
       .catch(function (err) {
         state.saving = false;
-        if (err.code === 'CONFLICT') return showLatestAfterConflict(err, rev, '写真');
-        if (err.unknown) pr.op = op;
+        if (err.code === 'CONFLICT') {
+          pr.op = null; pr.payload = null;
+          var latest = err.data && err.data.item;
+          if (latest && stillShowing(rev)) {
+            rememberDetail(latest, null); upsertListItem(latest); showDetail(latest, null);
+            openForm(latest, null, { values: latest, photo: mergePhotoDraft(latest, pr.draft),
+              conflict: [{ key: 'photos', theirs: '最新の写真', mine: '保存できなかった写真の下書き' }] });
+            state.photoRetry = null;
+          } else if (stillShowing(rev)) {
+            showDetail(item, logs);
+          }
+          toast('写真を送り直す前に他の人が更新していました。下書きを残したので、最新の写真と代表を確かめて保存してください', 'error');
+          return;
+        }
+        if (!err.unknown) { pr.op = null; pr.payload = null; }
         if (stillShowing(rev)) showDetail(item, logs);
         toast((err.unknown ? '写真を保存できたか確認できませんでした' : '写真を保存できませんでした') +
           '（' + (err.message || '通信エラー') + '）。もう一度「写真だけ送り直す」を押してください', 'error');
@@ -1032,7 +1069,7 @@
       return (a.name || '') + (a.stock_status ? '（' + a.stock_status + '）' : '');
     }
     if (l.action_type === 'UPDATE' && a && typeof a === 'object') {
-      return Object.keys(a).map(function (k) { return fieldLabel(k); }).join(' / ') + ' を変更';
+      return Object.keys(a).filter(function (k) { return k.charAt(0) !== '_' && (k !== 'photo_url' || !a.photos); }).map(function (k) { return fieldLabel(k); }).join(' / ') + ' を変更';
     }
     return l.after_state || '';
   }
@@ -1046,7 +1083,7 @@
     var map = {
       name: '備品名', category: 'カテゴリ', location: '保管場所',
       stock_status: '在庫', quantity: '個数', note: '備考',
-      photo_url: '写真', is_deleted: '削除フラグ'
+      photo_url: '代表写真', photos: '写真', is_deleted: '削除フラグ'
     };
     return map[key] || key;
   }
@@ -1180,7 +1217,14 @@
    * @param {{replace: boolean}=} nav replace なら画面の履歴を積まない
    */
   function openForm(item, presetItemId, draft, nav) {
-    state.photoDraft = (draft && draft.photo) || null;
+    // PHOTO.md 項目5: 部分失敗から編集へ進む場合も、失敗下書きと代表の希望を保持する。
+    var retry = state.photoRetry;
+    if (!draft && item && retry && retry.itemId === item.item_id) {
+      var photo = item.version === retry.baseVersion ? retry.draft : mergePhotoDraft(item, retry.draft);
+      draft = { values: item, photo: { photos: photo.photos.slice(), primary: photo.primary, waiting: photo.waiting.slice() } };
+      if (retry.needsReview || item.version !== retry.baseVersion) draft.conflict = [{ key: 'photos', theirs: '最新の写真', mine: '保存できなかった写真の下書き。代表は再確認してください' }];
+    }
+    state.photoDraft = (draft && draft.photo) || initialPhotoDraft(item);
     state.formOp = (draft && draft.op) || null;
     state.formBase = item || null;
     var isEdit = !!item;
@@ -1191,7 +1235,6 @@
       quantity: '', note: '', photo_url: ''
     };
     var v = draft ? Object.assign({}, base, draft.values) : base;
-    var photoUrl = state.photoDraft ? state.photoDraft.previewUrl : v.photo_url;
 
     var statusOptions = state.meta.stockStatuses.map(function (s) {
       return '<option value="' + esc(s) + '"' + (s === v.stock_status ? ' selected' : '') + '>' + esc(s) + '</option>';
@@ -1210,20 +1253,21 @@
         '<input id="f-item-id" class="field-input" type="text" autocapitalize="characters" ' +
         'placeholder="ITEM-0001" value="' + esc(v.item_id) + '"></div>';
 
-    var currentPhoto = photoUrl
-      ? '<img id="photo-preview" src="' + esc(photoUrl) + '" alt=""' + PHOTO_REFERRER + ' class="w-full aspect-[4/3] object-cover rounded-xl bg-slate-200">'
-      : '<div id="photo-preview-empty" class="w-full aspect-[4/3] rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1 text-slate-400">' +
-        '<span class="text-4xl">📷</span><span class="text-xs">写真なし</span></div>';
-
     $('#view-form').innerHTML = '' +
       '<form id="item-form" class="space-y-4" novalidate>' +
            conflictNotice(draft && draft.conflict) +
       '  <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3">' +
       '    <span class="field-label">写真</span>' +
-      '    <div id="photo-slot">' + currentPhoto + '</div>' +
-      '    <input id="f-photo" type="file" accept="image/*" capture="environment" class="hidden">' +
+      '    <div id="photo-slot" class="space-y-3"></div>' +
+      '    <p id="photo-limit" aria-live="polite" class="text-sm text-slate-600"></p>' +
+      '    <p id="photo-error" role="alert" class="text-sm text-rose-700"></p>' +
+      '    <input id="f-photo" type="file" accept="image/*" capture="environment" aria-label="撮影する" class="hidden">' +
+      '    <input id="f-photo-album" type="file" accept="image/*" multiple aria-label="アルバムから選ぶ" class="hidden">' +
       '    <div class="grid grid-cols-2 gap-2">' +
-      '      <button type="button" id="btn-photo-pick" class="h-11 rounded-xl bg-slate-100 font-semibold text-sm active:bg-slate-200">写真を選ぶ / 撮影</button>' +
+      '      <button type="button" id="btn-photo-pick" class="h-11 rounded-xl bg-slate-100 font-semibold text-sm active:bg-slate-200" aria-label="撮影する" aria-describedby="photo-limit">撮影する</button>' +
+      '      <button type="button" id="btn-photo-album" aria-label="アルバムから選ぶ" aria-describedby="photo-limit" class="h-11 rounded-xl bg-slate-100 font-semibold text-sm active:bg-slate-200">アルバムから選ぶ</button>' +
+      '    </div>' +
+      '    <div>' +
       '      <button type="button" id="btn-photo-clear" class="h-11 rounded-xl bg-white border border-slate-300 text-slate-600 font-semibold text-sm active:bg-slate-50">選択を取消</button>' +
       '    </div>' +
       '  </div>' +
@@ -1258,8 +1302,12 @@
       submitForm(isEdit, v.item_id);
     });
     $('#btn-photo-pick').addEventListener('click', function () { $('#f-photo').click(); });
+    $('#btn-photo-album').addEventListener('click', function () { $('#f-photo-album').click(); });
+    $('#f-photo-album').addEventListener('change', onPhotoSelected);
     $('#btn-photo-clear').addEventListener('click', clearPhotoDraft);
     $('#f-photo').addEventListener('change', onPhotoSelected);
+    $('#photo-slot').addEventListener('click', onFormPhotoAction);
+    renderFormPhotos();
 
     return goto('form', { title: isEdit ? '備品を編集' : '備品を登録', replace: !!(nav && nav.replace) });
   }
@@ -1316,7 +1364,12 @@
     upsertListItem(latest);
     if (stillShowing(rev)) {
       showDetail(latest, null);
-      openForm(latest, null, { values: values, photo: draft.photo, conflict: conflict });
+      var photo = draft.photo;
+      if (JSON.stringify([itemPhotos(base), base.photo_url]) !== JSON.stringify([itemPhotos(latest), latest.photo_url])) {
+        photo = mergePhotoDraft(latest, draft.photo);
+        conflict.push({ key: 'photos', theirs: '最新の写真', mine: '追加した写真の下書き。外す操作と代表は再確認してください' });
+      }
+      openForm(latest, null, { values: values, photo: photo, conflict: conflict });
     }
     toast('他の人が先にこの備品を更新していたため、保存しませんでした。入力を残してフォームに戻りました', 'error');
   }
@@ -1337,13 +1390,12 @@
       quantity: $('#f-quantity').value === '' ? null : Number($('#f-quantity').value),
       note: $('#f-note').value.trim()
     };
-    if (state.photoDraft) {
-      payload.photo = {
-        data: state.photoDraft.data,
-        mimeType: state.photoDraft.mimeType,
-        filename: state.photoDraft.filename
-      };
+    if (state.photoDraft.waiting.length) {
+      photoInputError('待機中の写真があります。写真を外して追加するか、待機中の写真を外してください');
+      return;
     }
+    payload.photos = photoPayload(state.photoDraft.photos);
+    payload.primary_photo_id = state.photoDraft.primary;
 
     var action;
     var base = isEdit ? state.formBase : null;
@@ -1355,7 +1407,9 @@
       EDIT_FIELDS.forEach(function (k) {
         if (!base || fieldText(k, payload[k]) !== fieldText(k, base[k])) send[k] = payload[k];
       });
-      if (payload.photo) send.photo = payload.photo;
+      if (JSON.stringify([payload.photos, payload.primary_photo_id]) !== JSON.stringify([photoPayload(itemPhotos(base)), initialPhotoDraft(base).primary])) {
+        send.photos = payload.photos; send.primary_photo_id = payload.primary_photo_id;
+      }
       if (Object.keys(send).length === 2) {
         toast('変更はありません', 'info');
         return;
@@ -1390,7 +1444,9 @@
     var optimistic = Object.assign({}, prev || { item_id: payload.item_id || '（採番中）', is_deleted: false }, {
       name: payload.name, category: payload.category, location: payload.location,
       stock_status: payload.stock_status, quantity: payload.quantity, note: payload.note,
-      photo_url: draft.photo ? draft.photo.previewUrl : (prev ? prev.photo_url : ''),
+      photos: draft.photo.photos.map(function (p) { return { id: p.id, url: p.previewUrl || p.url }; }),
+      photo_url: (draft.photo.photos.filter(function (p) { return p.id === draft.photo.primary; })[0] || {}).previewUrl ||
+        (draft.photo.photos.filter(function (p) { return p.id === draft.photo.primary; })[0] || {}).url || '',
       updated_at: '（保存中）', updated_by: state.user ? state.user.email : ''
     });
     state.saving = true;
@@ -1404,11 +1460,12 @@
       .then(function (data) {
         state.saving = false;
         var showing = stillShowing(rev); // applySaved が描き直す前に確かめる
+        if (state.photoRetry && state.photoRetry.itemId === data.item.item_id) state.photoRetry = null;
         applySaved(data.item, data.log, prevLogs, rev);
         mergeMeta(payload.category, payload.location); // 新しいカテゴリ・場所を候補に反映
         PERF.end(perfKey + '確定');
         if (data.photoError) {
-          onPhotoNotSaved(data.item, draft.photo, showing);
+          onPhotoNotSaved(data.item, draft.photo, showing, data.photoErrors);
           return;
         }
         toast(isEdit ? '保存しました' : '登録しました（' + data.item.item_id + '）', 'success');
@@ -1441,14 +1498,39 @@
    * 備品は登録できたが写真を保存できなかった（PLAN-2 項目 1）。選んだ写真を手元に残し、詳細の
    * 「写真だけ送り直す」で写真だけを送れるようにする（備品は増えず、ほかの項目も送らない）。
    */
-  function onPhotoNotSaved(item, photo, showing) {
-    if (!photo) return;
-    state.photoRetry = { itemId: item.item_id, photo: photo, op: null };
-    if (showing && state.currentItem && state.currentItem.item_id === item.item_id) {
-      showDetail(state.currentItem, state.currentLogs);
+  function onPhotoNotSaved(item, draft, showing, errors) {
+    if (!draft) return;
+    var saved = itemPhotos(item);
+    var failedIds = (errors || []).map(function (e) { return e.id; });
+    var failed = draft.photos.filter(function (p) {
+      return p.photo && (!failedIds.length || failedIds.indexOf(p.id) !== -1) &&
+        !saved.some(function (x) { return x.id === p.id; });
+    });
+    if (!failed.length) {
+      if (state.photoRetry && state.photoRetry.itemId === item.item_id) state.photoRetry = null;
+      toast('写真はすでに保存されています。最新の写真を確認してください', 'info');
+      return;
     }
-    toast('「' + item.name + '」を登録しました（' + item.item_id + '）が、写真は保存できませんでした。' +
-      '詳細の「写真だけ送り直す」で写真を送れます', 'error');
+    // 同ID確認のitemは現在の備品。元操作の成功集合/代表と違えば他者の変更を再確認する。
+    // 保存できなかった写真だけを戻し、他者が追加した写真や取り外した成功写真を勝手に変更しない。
+    var expected = draft.photos.filter(function (p) {
+      return failedIds.length ? failedIds.indexOf(p.id) === -1 : !failed.some(function (x) { return x.id === p.id; });
+    });
+    var expectedPrimary = (expected.filter(function (p) { return p.id === draft.primary; })[0] || expected[0] || {}).id || '';
+    var changed = JSON.stringify(saved.map(function (p) { return p.id; })) !== JSON.stringify(expected.map(function (p) { return p.id; })) ||
+      initialPhotoDraft(item).primary !== expectedPrimary || expected.some(function (p) {
+        return p.url && !saved.some(function (x) { return x.id === p.id && x.url === p.url; });
+      });
+    var photos = draft.photos.map(function (p) {
+      return saved.filter(function (x) { return x.id === p.id; })[0] ||
+        (failed.some(function (x) { return x.id === p.id; }) ? p : null);
+    }).filter(Boolean);
+    var retryDraft = changed ? mergePhotoDraft(item, { photos: failed, primary: draft.primary, waiting: [] }) :
+      { photos: photos, primary: draft.primary, waiting: [] };
+    state.photoRetry = { itemId: item.item_id, baseVersion: item.version, draft: retryDraft,
+      needsReview: changed, failedNumbers: failed.map(function (p) { return draft.photos.indexOf(p) + 1; }), op: null, payload: null };
+    if (showing && state.currentItem && state.currentItem.item_id === item.item_id) showDetail(state.currentItem, state.currentLogs);
+    toast('備品は保存しましたが、一部の写真を保存できませんでした。詳細の「写真だけ送り直す」で送れます', 'error');
   }
 
   /**
@@ -1489,63 +1571,193 @@
 
   /* ---------- 写真 ---------- */
 
-  function onPhotoSelected(ev) {
-    var file = ev.target.files && ev.target.files[0];
-    if (!file) return;
-    if (!/^image\//.test(file.type)) {
-      toast('画像ファイルを選んでください', 'error');
-      return;
+  function photoInputError(message) {
+    var error = $('#photo-error');
+    if (error) error.textContent = message;
+    toast(message, 'error');
+  }
+
+  function photoIdFromUrl(url) {
+    var m = String(url).match(/\/d\/([^/?#]+)/) || String(url).match(/[?&]id=([^&#]+)/);
+    if (m) return 'legacy-' + m[1];
+    var hash = 2166136261;
+    for (var i = 0; i < url.length; i++) { hash ^= url.charCodeAt(i); hash = Math.imul(hash, 16777619); }
+    return 'legacy-' + (hash >>> 0).toString(16);
+  }
+
+  function itemPhotos(item) {
+    if (!item) return [];
+    if (Array.isArray(item.photos)) return item.photos;
+    return item.photo_url ? [{ id: photoIdFromUrl(item.photo_url), url: item.photo_url }] : [];
+  }
+
+  function initialPhotoDraft(item) {
+    var photos = itemPhotos(item).map(function (p) { return { id: p.id, url: p.url }; });
+    return { photos: photos, primary: (photos.filter(function (p) { return p.url === item.photo_url; })[0] || photos[0] || {}).id || '', waiting: [] };
+  }
+
+  function photoPayload(photos) {
+    return photos.map(function (p) { return p.photo ? { id: p.id, photo: p.photo } : { id: p.id, url: p.url }; });
+  }
+
+  function mergePhotoDraft(latest, draft) {
+    var merged = initialPhotoDraft(latest);
+    var pending = (draft ? draft.photos.concat(draft.waiting || []) : []).filter(function (p) {
+      return p.photo && !merged.photos.some(function (x) { return x.id === p.id; });
+    });
+    pending.forEach(function (p) {
+      if (merged.photos.length < (CFG.MAX_PHOTOS || 4)) merged.photos.push(p); else merged.waiting.push(p);
+    });
+    if (draft && merged.photos.some(function (p) { return p.id === draft.primary; })) merged.primary = draft.primary;
+    if (!merged.primary && merged.photos.length) merged.primary = merged.photos[0].id;
+    return merged;
+  }
+
+  function renderFormPhotos() {
+    var draft = state.photoDraft;
+    if (!draft || !$('#photo-slot')) return;
+    function card(p, i, waiting) {
+      var label = waiting ? '待機中の写真' + (i + 1) : '写真' + (i + 1);
+      return '<figure class="border border-slate-200 rounded-xl overflow-hidden" data-form-photo="' + esc(p.id) + '">' +
+        '<img src="' + esc(p.previewUrl || p.url) + '" alt="' + label + '"' + PHOTO_REFERRER + ' class="w-full aspect-[4/3] object-cover bg-slate-200">' +
+        '<figcaption class="p-3 space-y-2"><p class="text-sm font-semibold">' + label + (draft.primary === p.id ? ' ・ 代表' : '') + '</p>' +
+        '<div class="grid grid-cols-2 gap-2">' +
+        (waiting ? '<button type="button" data-photo-add="' + esc(p.id) + '" class="h-11 rounded-lg bg-slate-100"' + (draft.photos.length >= (CFG.MAX_PHOTOS || 4) ? ' disabled' : '') + '>追加する</button>' :
+        '<button type="button" data-photo-primary="' + esc(p.id) + '" aria-label="' + label + 'を代表にする" aria-pressed="' + (draft.primary === p.id) + '" class="h-11 rounded-lg bg-slate-100">' + (draft.primary === p.id ? '代表' : '代表にする') + '</button>') +
+        '<button type="button" data-photo-remove="' + esc(p.id) + '" aria-label="' + label + 'を外す" class="h-11 rounded-lg border border-slate-300">外す</button></div></figcaption></figure>';
     }
+    $('#photo-slot').innerHTML = (draft.photos.length ? draft.photos.map(function (p, i) { return card(p, i, false); }).join('') :
+      '<div class="h-32 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">写真なし</div>') +
+      draft.waiting.map(function (p, i) { return card(p, i, true); }).join('');
+    var full = draft.photos.length >= (CFG.MAX_PHOTOS || 4);
+    $('#photo-limit').textContent = full ? '写真は4枚までです。追加するには写真を外してください' :
+      '写真は4枚までです。あと' + ((CFG.MAX_PHOTOS || 4) - draft.photos.length) + '枚追加できます' +
+      (draft.waiting.length ? '。待機中の写真を追加するか外してください' : '');
+    ['#btn-photo-pick', '#btn-photo-album', '#f-photo', '#f-photo-album'].forEach(function (id) { $(id).disabled = full; });
+  }
+
+  function onFormPhotoAction(ev) {
+    var btn = ev.target.closest('[data-photo-remove], [data-photo-primary], [data-photo-add]');
+    if (!btn || !state.photoDraft) return;
+    var d = state.photoDraft;
+    var id = btn.getAttribute('data-photo-remove') || btn.getAttribute('data-photo-primary') || btn.getAttribute('data-photo-add');
+    if (btn.hasAttribute('data-photo-remove')) {
+      d.photos = d.photos.filter(function (p) { return p.id !== id; });
+      d.waiting = d.waiting.filter(function (p) { return p.id !== id; });
+      if (d.primary === id) d.primary = (d.photos[0] || {}).id || '';
+    } else if (btn.hasAttribute('data-photo-primary')) d.primary = id;
+    else if (d.photos.length < (CFG.MAX_PHOTOS || 4)) {
+      var p = d.waiting.filter(function (x) { return x.id === id; })[0];
+      if (p) { d.photos.push(p); d.waiting = d.waiting.filter(function (x) { return x.id !== id; }); }
+      if (!d.primary) d.primary = id;
+    }
+    renderFormPhotos();
+    var focus = $('#photo-slot button') || $('#btn-photo-album');
+    focus.focus();
+  }
+
+  async function onPhotoSelected(ev) {
+    var input = ev.target;
+    var files = Array.prototype.slice.call(input.files || []);
+    input.value = '';
+    if (!files.length || !state.photoDraft) return;
+    var draft = state.photoDraft;
+    var remaining = (CFG.MAX_PHOTOS || 4) - draft.photos.length;
+    if (files.length > remaining) return photoInputError('あと' + remaining + '枚まで選べます。枚数を減らして選び直してください');
+    $('#photo-error').textContent = '';
     loading(true, '画像を処理中…');
-    compressImage(file, CFG.PHOTO_MAX_EDGE || 1280, CFG.PHOTO_QUALITY || 0.82)
-      .then(function (result) {
-        state.photoDraft = result;
-        var slot = $('#photo-slot');
-        slot.innerHTML = '<img src="' + result.previewUrl + '" alt="" class="w-full aspect-[4/3] object-cover rounded-xl bg-slate-200">';
-        toast('写真を選択しました（保存時にアップロード）', 'info');
-      })
-      .catch(function () { toast('画像の読み込みに失敗しました', 'error'); })
-      .then(function () { loading(false); }, function () { loading(false); });
+    var errors = [];
+    try {
+      for (var i = 0; i < files.length; i++) {
+        var file = files[i];
+        try {
+          if (file.type && !/^image\//i.test(file.type)) throw new Error('画像ファイルを選んでください。JPEGまたはPNGで選び直してください');
+          var result = await compressImage(file, CFG.PHOTO_MAX_EDGE || 1280, CFG.PHOTO_QUALITY || 0.82);
+          if (state.photoDraft !== draft) return;
+          var id = 'photo-' + newOp().id;
+          draft.photos.push({ id: id, photo: { data: result.data, mimeType: result.mimeType, filename: result.filename }, previewUrl: result.previewUrl });
+          if (!draft.primary) draft.primary = id;
+        } catch (err) { errors.push((i + 1) + '枚目: ' + err.message); }
+      }
+      if (state.photoDraft === draft) {
+        renderFormPhotos();
+        if (errors.length) photoInputError(errors.join(' / ')); else toast('写真を選択しました（保存時にアップロード）', 'info');
+      }
+    } finally { loading(false); }
   }
 
   function clearPhotoDraft() {
-    state.photoDraft = null;
-    $('#f-photo').value = '';
-    $('#photo-slot').innerHTML =
-      '<div class="w-full aspect-[4/3] rounded-xl bg-slate-100 border-2 border-dashed border-slate-300 ' +
-      'flex flex-col items-center justify-center gap-1 text-slate-400">' +
-      '<span class="text-4xl">📷</span><span class="text-xs">写真なし</span></div>';
+    state.photoDraft = initialPhotoDraft(state.formBase);
+    $('#f-photo').value = ''; $('#f-photo-album').value = '';
+    $('#photo-error').textContent = '';
+    renderFormPhotos();
+  }
+
+  function detailImage(p, name, i) {
+    return '<img src="' + esc(detailPhotoUrl(p.url)) + '" alt="' + esc(name) + ' 写真' + (i + 1) + '" decoding="async"' + PHOTO_REFERRER +
+      ' class="w-full aspect-[4/3] object-cover bg-slate-200">';
+  }
+
+  function expandPhoto(button) {
+    var id = button.getAttribute('data-photo-expand');
+    var photos = itemPhotos(state.currentItem);
+    var p = photos.filter(function (x) { return x.id === id; })[0];
+    if (!p) return;
+    var dialog = document.createElement('dialog');
+    dialog.setAttribute('aria-label', '写真' + (photos.indexOf(p) + 1) + 'の拡大');
+    dialog.className = 'rounded-xl p-3 max-w-full bg-white';
+    dialog.innerHTML = '<button class="h-11 px-4 rounded-lg bg-slate-100" autofocus>閉じる</button><img src="' + esc(p.url) +
+      '" alt="' + esc(state.currentItem.name) + 'の拡大写真"' + PHOTO_REFERRER + ' style="max-width:90vw;max-height:75vh;object-fit:contain">';
+    $('button', dialog).addEventListener('click', function () { dialog.close(); });
+    $('img', dialog).addEventListener('error', function () {
+      var msg = document.createElement('p'); msg.setAttribute('role', 'alert'); msg.textContent = '拡大写真を読み込めませんでした。閉じて詳細の写真を読み直してください';
+      this.replaceWith(msg);
+    });
+    dialog.addEventListener('close', function () { dialog.remove(); if (button.isConnected) button.focus(); });
+    document.body.appendChild(dialog); dialog.showModal();
   }
 
   /**
    * canvas で長辺 maxEdge に縮小し JPEG 化する。
    * スマホの原寸写真（3〜8MB）をそのまま送ると GAS 側で詰まるため必須。
    */
+  // PHOTO.md 項目3: EXIFの向きはブラウザのデコードへ任せ、二重に回転しない。
   function compressImage(file, maxEdge, quality) {
     return new Promise(function (resolve, reject) {
-      var url = URL.createObjectURL(file);
-      var img = new Image();
+      var url, img = new Image(), canvas;
+      function cleanup() {
+        if (url) URL.revokeObjectURL(url);
+        img.onload = img.onerror = null;
+        img.src = '';
+        if (canvas) canvas.width = canvas.height = 1;
+      }
       img.onload = function () {
-        var w = img.naturalWidth, h = img.naturalHeight;
-        var scale = Math.min(1, maxEdge / Math.max(w, h));
-        var cw = Math.round(w * scale), ch = Math.round(h * scale);
-
-        var canvas = document.createElement('canvas');
-        canvas.width = cw; canvas.height = ch;
-        var ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, cw, ch);
-        URL.revokeObjectURL(url);
-
-        var dataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve({
-          data: dataUrl.split(',')[1],
-          mimeType: 'image/jpeg',
-          filename: (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg',
-          previewUrl: dataUrl
-        });
+        try {
+          var w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) throw new Error('寸法を取得できません');
+          var scale = Math.min(1, maxEdge / Math.max(w, h));
+          var cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+          canvas = document.createElement('canvas');
+          canvas.width = cw; canvas.height = ch;
+          var ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('描画領域を確保できません');
+          ctx.drawImage(img, 0, 0, cw, ch);
+          var dataUrl = canvas.toDataURL('image/jpeg', quality);
+          if (!/^data:image\/jpeg;base64,/.test(dataUrl)) throw new Error('JPEGに変換できません');
+          var data = dataUrl.split(',')[1];
+          if (!data || data.length * 3 / 4 > 6 * 1024 * 1024) throw new Error('写真が大きすぎます');
+          resolve({ data: data, mimeType: 'image/jpeg',
+            filename: (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', previewUrl: dataUrl });
+        } catch (err) {
+          reject(new Error('写真を処理できません。小さいJPEGで選び直してください'));
+        } finally { cleanup(); }
       };
-      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image load error')); };
-      img.src = url;
+      img.onerror = function () {
+        cleanup();
+        reject(new Error('この写真を読み込めません。JPEGまたはPNGに変換して選び直してください'));
+      };
+      try { url = URL.createObjectURL(file); img.src = url; }
+      catch (err) { cleanup(); reject(new Error('写真を処理できません。小さいJPEGで選び直してください')); }
     });
   }
 
@@ -1653,12 +1865,14 @@
     var s = String(text || '').trim();
     if (!s) return '';
     var m = /[?&]item=([^&#\s]+)/i.exec(s);
-    if (m) return decodeURIComponent(m[1]).trim();
+    if (m) {
+      try { return decodeURIComponent(m[1]).trim(); } catch (e) { return ''; }
+    }
     m = /\bITEM-\d+\b/i.exec(s);
     if (m) return m[0].toUpperCase();
     if (/^https?:\/\//i.test(s)) {
       var seg = s.split(/[?#]/)[0].split('/').filter(Boolean).pop();
-      return seg ? decodeURIComponent(seg) : '';
+      try { return seg ? decodeURIComponent(seg) : ''; } catch (e) { return ''; }
     }
     return s;
   }
@@ -1713,10 +1927,14 @@
     }
     if (img.closest('#view-detail')) {
       var box = document.createElement('div');
-      box.id = 'photo-failed';
+      var figure = img.closest('[data-detail-photo]');
+      var index = $$('#view-detail [data-detail-photo]').indexOf(figure);
+      if (index === 0) box.id = 'photo-failed';
+      box.setAttribute('data-photo-failed', '1');
       box.className = 'w-full aspect-[4/3] bg-rose-50 flex flex-col items-center justify-center gap-2 text-rose-600';
-      box.innerHTML = '<span class="text-4xl">⚠</span><p class="text-sm">写真を読み込めませんでした</p>' +
-        '<button id="btn-photo-reload" class="h-10 px-4 rounded-xl bg-white border border-rose-300 text-sm font-semibold active:bg-rose-50">再読み込み</button>';
+      box.innerHTML = '<span class="text-4xl">⚠</span><p class="text-sm">写真' + (index + 1) + 'を読み込めなかった（写真を読み込めませんでした）</p>' +
+        '<button' + (index === 0 ? ' id="btn-photo-reload"' : '') + ' data-photo-reload="' + esc(figure.getAttribute('data-detail-photo')) + '" class="h-11 px-4 rounded-xl bg-white border border-rose-300 text-sm font-semibold">再読み込み</button>';
+      $('[data-photo-expand]', figure).disabled = true;
       img.replaceWith(box);
     }
   }
@@ -1758,8 +1976,18 @@
       if (statusBtn) return updateStatus(statusBtn.getAttribute('data-set-status'));
       if (ev.target.closest('#btn-edit')) return openForm(state.currentItem);
       if (ev.target.closest('#btn-photo-retry')) return retryPhoto();
-      if (ev.target.closest('#btn-photo-reload') && state.currentItem) {
-        return showDetail(state.currentItem, state.currentLogs); // 描き直して写真を取り直す
+      var expand = ev.target.closest('[data-photo-expand]');
+      if (expand) return expandPhoto(expand);
+      var reload = ev.target.closest('[data-photo-reload]');
+      if (reload && state.currentItem) {
+        var figure = reload.closest('[data-detail-photo]');
+        var photos = itemPhotos(state.currentItem);
+        var p = photos.filter(function (x) { return x.id === reload.getAttribute('data-photo-reload'); })[0];
+        if (!p) return;
+        $('[data-photo-failed]', figure).outerHTML = detailImage(p, state.currentItem.name, photos.indexOf(p));
+        $('[data-photo-expand]', figure).disabled = false;
+        $('[data-photo-expand]', figure).focus();
+        return;
       }
       if (ev.target.closest('#btn-delete')) return deleteItem();
     });

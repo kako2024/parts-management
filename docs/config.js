@@ -17,5 +17,12 @@ window.APP_CONFIG = {
 
   /** 写真アップロード時の長辺リサイズ上限(px)と JPEG 品質 */
   PHOTO_MAX_EDGE: 1280,
-  PHOTO_QUALITY: 0.82
+  PHOTO_QUALITY: 0.82,
+
+  /** 1備品の写真の上限（GASのMAX_PHOTOSと同じ） */
+  MAX_PHOTOS: 4,
+
+  /** 応答待ちの期限。保存はGASの実行上限6分と通信の余裕を確保する */
+  API_READ_TIMEOUT_MS: 60000,
+  API_WRITE_TIMEOUT_MS: 420000
 };

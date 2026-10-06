@@ -81,6 +81,8 @@ function rowToItem_(row, idx, rowNumber) {
     _op_ids: idx.op_ids === undefined ? '' : toStr_(row[idx.op_ids]),
     _raw: row // 行全体を 1 回で書き直すときに使う（updateItemRow_）
   };
+  item.photos = readPhotos_(idx.photos === undefined ? '' : toStr_(row[idx.photos]), item.photo_url);
+  item._photo_ops = idx.photo_ops === undefined ? '{}' : toStr_(row[idx.photo_ops]);
   item.version = itemVersion_(item);
   return item;
 }
@@ -92,7 +94,7 @@ function rowToItem_(row, idx, rowNumber) {
  * ハッシュではなく軽い FNV-1a を 2 通り（64 ビット分）使う。
  */
 function itemVersion_(item) {
-  var s = JSON.stringify(CONST.ITEM_HEADERS.map(function (h) { return item[h] === undefined ? null : item[h]; }));
+  var s = JSON.stringify(CONST.ITEM_HEADERS.map(function (h) { return item[h] === undefined ? null : item[h]; }).concat([item.photos || readPhotos_('', item.photo_url)]));
   var h1 = 0x811c9dc5;
   var h2 = 0x9747b28c;
   for (var i = 0; i < s.length; i++) {
@@ -293,7 +295,7 @@ function nextItemId_(rows) {
     }
   }
   var next = max + 1;
-  return 'ITEM-' + ('0000' + next).slice(-4);
+  return 'ITEM-' + String(next).padStart(4, '0');
 }
 
 /**
@@ -326,6 +328,7 @@ function insertItem_(input, userEmail) {
     stock_status: sanitizeText_(input.stock_status, 20),
     quantity: toNumOrNull_(input.quantity),
     photo_url: sanitizeText_(input.photo_url, 500),
+    photos: input.photos || readPhotos_('', input.photo_url),
     note: sanitizeText_(input.note, 1000),
     updated_at: now,
     updated_by: userEmail,
@@ -335,6 +338,8 @@ function insertItem_(input, userEmail) {
   noteWriteStarted_();
   forgetItemsMemo_();
   ensureItemColumn_(data, 'op_ids');
+  ensureItemColumn_(data, 'photos');
+  ensureItemColumn_(data, 'photo_ops');
   var width = data.sheet.getLastColumn();
   var rowArr = new Array(width).fill('');
   CONST.ITEM_HEADERS.forEach(function (h) {
@@ -343,6 +348,8 @@ function insertItem_(input, userEmail) {
     if (h === 'quantity' && v === null) v = '';
     rowArr[idx[h]] = asCellLiteral_(v);
   });
+  rowArr[idx.photos] = input.photos === undefined ? '' : asCellLiteral_(JSON.stringify(record.photos));
+  rowArr[idx.photo_ops] = asCellLiteral_(input.photo_ops || '{}');
   // 行と一緒に書くので、行があれば操作の記録もある（Op.gs）
   rowArr[idx.op_ids] = asCellLiteral_(nextOpIds_('', currentOpMark_()));
 
@@ -371,6 +378,8 @@ function updateItemRow_(item, patch, ctx, userEmail) {
   var idx = ctx.idx;
   forgetItemsMemo_();
   ensureItemColumn_(ctx, 'op_ids');
+  ensureItemColumn_(ctx, 'photos');
+  ensureItemColumn_(ctx, 'photo_ops');
 
   var width = sh.getLastColumn();
   var rowNumber = item._row;
@@ -398,7 +407,7 @@ function updateItemRow_(item, patch, ctx, userEmail) {
   }
   Object.keys(patch).forEach(function (key) {
     if (idx[key] === undefined) return;
-    var v = patch[key];
+    var v = key === 'photos' ? JSON.stringify(patch[key]) : patch[key];
     if (key === 'quantity' && v === null) v = '';
     values[idx[key]] = asCellLiteral_(v);
   });
@@ -411,7 +420,8 @@ function updateItemRow_(item, patch, ctx, userEmail) {
   lap_('writeRow');
 
   var merged = stripInternal_(current);
-  Object.keys(patch).forEach(function (k) { merged[k] = patch[k]; });
+  Object.keys(patch).forEach(function (k) { if (k !== 'photo_ops') merged[k] = patch[k]; });
+  if (patch.photo_url !== undefined && patch.photos === undefined) merged.photos = readPhotos_('', patch.photo_url);
   merged.updated_at = now;
   merged.updated_by = userEmail;
   merged.version = itemVersion_(merged);
@@ -434,7 +444,7 @@ function nextLogId_(sh) {
   if (known !== null) {
     var seqNext = Number(known) + 1;
     cache.put(seqKey, String(seqNext), 6 * 60 * 60);
-    return 'LOG-' + today + '-' + ('00' + seqNext).slice(-3);
+    return 'LOG-' + today + '-' + String(seqNext).padStart(3, '0');
   }
   var id = nextLogIdFromSheet_(sh, today);
   cache.put(seqKey, String(parseInt(id.split('-')[2], 10)), 6 * 60 * 60);
@@ -456,7 +466,7 @@ function nextLogIdFromSheet_(sh, today) {
       }
     }
   }
-  return 'LOG-' + today + '-' + ('00' + (seq + 1)).slice(-3);
+  return 'LOG-' + today + '-' + String(seq + 1).padStart(3, '0');
 }
 
 /**

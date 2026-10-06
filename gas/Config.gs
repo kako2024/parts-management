@@ -27,7 +27,7 @@ var CONST = {
    * op_ids: その備品の行に書き込んだ操作の記録（空白区切り。履歴に残ったものから古い順に消す。Op.gs）。
    * op_id: その履歴を追記した操作（logs の 8 列目に置く）
    */
-  ITEM_EXTRA_HEADERS: ['op_ids'],
+  ITEM_EXTRA_HEADERS: ['op_ids', 'photos', 'photo_ops'],
   LOG_EXTRA_HEADERS: ['op_id'],
 
   /** 在庫ステータスの許容値（これ以外は弾く） */
@@ -52,6 +52,8 @@ var CONST = {
 
   /** アップロード写真の上限（デコード後バイト数） */
   MAX_PHOTO_BYTES: 6 * 1024 * 1024,
+  /** PHOTO.md 項目4: 1備品の写真上限 */
+  MAX_PHOTOS: 4,
   /** 書き込みロックの待ち時間(ms) */
   LOCK_WAIT_MS: 20000
 };

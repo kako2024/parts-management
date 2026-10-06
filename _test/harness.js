@@ -191,6 +191,11 @@ const sandbox = {
     })
   },
   DriveApp: {
+    getFileById: (id) => {
+      const record = driveFiles.find(f => f.id === id);
+      if (!record) throw new Error('Driveファイルが見つかりません: ' + id);
+      return { getId: () => id, setTrashed: (on) => { record.trashed = on; record.trashCount++; } };
+    },
     Access: { ANYONE_WITH_LINK: 'anyone' },
     Permission: { VIEW: 'view' },
     getRootFolder: () => ({ getName: () => 'マイドライブ(mock)' }),
@@ -198,7 +203,7 @@ const sandbox = {
       getName: () => '備品写真(mock)',
       createFile: (blob) => {
         const id = 'file' + (driveFiles.length + 1);
-        driveFiles.push({ id, blob });
+        driveFiles.push({ id, blob, trashed: false, trashCount: 0 });
         return {
           getId: () => id,
           setDescription: function () { return this; },
@@ -1027,7 +1032,7 @@ t('追加の列が無い既存のシートでも、書き込みのときに列�
     const op = newOpId();
     const r = postOp('createItem', { name: '旧シート' }, op, 1);
     assert(r.ok, JSON.stringify(r));
-    eq(items._data[0].slice(-1), ['op_ids'], 'items に列が足されていない');
+    eq(items._data[0].slice(-3), ['op_ids', 'photos', 'photo_ops'], 'items に列が足されていない');
     eq(logs._data[0][7], 'op_id', 'logs の 8 列目に op_id がない');
     assert(postOp('createItem', { name: '旧シート' }, op, 2).data.replayed, '足した列で送り直しを判定できない');
     assert(post('getItems', {}, 'T1').data.items.some(i => i.name === '旧シート'), '一覧に出ない');
@@ -1201,6 +1206,257 @@ t('restock を付けた一覧は「残りわずか」「在庫なし」だけを
 t('doGet が疎通確認 JSON を返す', () => {
   const r = JSON.parse(ctx.doGet({}).getContent());
   assert(r.ok && r.data.status === 'running', JSON.stringify(r));
+});
+
+console.log('\n[複数写真 API]');
+const photoInput = id => ({ id, photo: { data: PNG, mimeType: 'image/png', filename: id + '.png' } });
+t('新APIで0/1/4枚を登録し代表を返す。5枚とID重複を保存前に拒否する', () => {
+  for (const count of [0, 1, 4]) {
+    const photos = Array.from({ length: count }, (_, i) => photoInput('photo-' + i));
+    const r = postOp('createItem', { name: '枚数' + count, photos, primary_photo_id: count ? 'photo-' + (count - 1) : '' }, newOpId(), 1);
+    assert(r.ok, JSON.stringify(r)); eq(r.data.item.photos.length, count);
+    eq(r.data.item.photo_url, count ? r.data.item.photos[count - 1].url : '');
+    eq(post('getItem', { item_id: r.data.item.item_id }).data.item.version, r.data.item.version);
+    const edit = postOp('updateItem', { item_id: r.data.item.item_id, base_version: r.data.item.version,
+      photos: r.data.item.photos, primary_photo_id: count ? r.data.item.photos[0].id : '' }, newOpId(), 1);
+    assert(edit.ok, JSON.stringify(edit)); eq(edit.data.item.photos.length, count);
+    const over = postOp('updateItem', { item_id: edit.data.item.item_id, base_version: edit.data.item.version,
+      photos: edit.data.item.photos.concat(Array.from({ length: 5 - count }, (_, i) => photoInput('extra-' + i))) }, newOpId(), 1);
+    assert(!over.ok && over.error.code === 'PHOTO_LIMIT', JSON.stringify(over));
+  }
+  const files = driveFiles.length, rows = itemRows().length;
+  for (const photos of [Array.from({ length: 5 }, (_, i) => photoInput('photo-' + i)), [photoInput('same'), photoInput('same')]]) {
+    const r = postOp('createItem', { name: '不正枚数', photos }, newOpId(), 1); assert(!r.ok, JSON.stringify(r));
+  }
+  eq(driveFiles.length, files); eq(itemRows().length, rows);
+});
+t('旧photo_urlだけの行は移行後も1枚の代表として読め、初期化で行を書き換えない', () => {
+  const r = post('createItem', { name: '旧写真', photo: { data: PNG, mimeType: 'image/png' } }); assert(r.ok);
+  const before = JSON.stringify(itemsSheet()._data.slice(1)); ctx.initSpreadsheet();
+  eq(JSON.stringify(itemsSheet()._data.slice(1)), before);
+  const it = post('getItem', { item_id: r.data.item.item_id }).data.item;
+  eq(it.photos.length, 1); eq(it.photos[0].url, it.photo_url);
+});
+t('部分失敗は成功分/項目を残し同ID再送で重複せず、新操作で失敗写真だけ追加する', () => {
+  const op = newOpId(), payload = { name: '部分写真', note: '保持', photos: [photoInput('A'), photoInput('B')], primary_photo_id: 'B' };
+  const restore = failDriveOnce(); let first;
+  try { first = postOp('createItem', payload, op, 1); } finally { restore(); }
+  assert(first.ok, JSON.stringify(first)); eq(first.data.item.photos.map(p => p.id), ['B']);
+  eq(first.data.photoErrors.map(p => p.id), ['A']); eq(first.data.item.note, '保持');
+  const files = driveFiles.length;
+  const again = postOp('createItem', payload, op, 2);
+  assert(again.ok && again.data.replayed); eq(driveFiles.length, files); eq(again.data.photoErrors, first.data.photoErrors);
+  const it = first.data.item;
+  const recovered = postOp('updateItem', { item_id: it.item_id, base_version: it.version,
+    photos: [photoInput('A'), it.photos[0]], primary_photo_id: 'A' }, newOpId(), 1);
+  assert(recovered.ok, JSON.stringify(recovered)); eq(recovered.data.item.photos.map(p => p.id), ['A', 'B']);
+  eq(recovered.data.item.photo_url, recovered.data.item.photos[0].url);
+});
+t('写真の同時編集は版で止める。取り外しと代表は履歴に残り、旧photoは代表だけを置換する', () => {
+  const base = postOp('createItem', { name: '写真競合', photos: [photoInput('a'), photoInput('b')] }, newOpId(), 1).data.item;
+  const a = postOp('updateItem', { item_id: base.item_id, base_version: base.version, photos: base.photos, primary_photo_id: 'b' }, newOpId(), 1);
+  assert(a.ok); assert(a.data.item.version !== base.version);
+  const files = driveFiles.length;
+  const stale = postOp('updateItem', { item_id: base.item_id, base_version: base.version, photos: [] }, newOpId(), 1);
+  assert(!stale.ok && stale.error.code === 'CONFLICT'); eq(driveFiles.length, files);
+  const legacy = post('updateItem', { item_id: base.item_id, photo: { data: PNG, mimeType: 'image/png' } }); assert(legacy.ok);
+  eq(legacy.data.item.photos.length, 2); eq(legacy.data.item.photos[0].url, base.photos[0].url);
+  assert(legacy.data.item.photos[1].url !== base.photos[1].url);
+  const removed = postOp('updateItem', { item_id: base.item_id, base_version: legacy.data.item.version,
+    photos: [legacy.data.item.photos[0]], primary_photo_id: legacy.data.item.photos[0].id }, newOpId(), 1);
+  assert(removed.ok); assert(removed.data.log.before_state.includes('photos')); assert(removed.data.log.after_state.includes('photos'));
+});
+t('希望の代表が保存できなければ先頭を代表にし、不正参照/形式/併用を保存前に拒否する', () => {
+  const orig = ctx.storePhoto_; let n = 0, r;
+  ctx.storePhoto_ = (...args) => { if (++n === 2) throw new Error('2枚目の失敗'); return orig(...args); };
+  try { r = postOp('createItem', { name: '代表失敗', photos: [photoInput('A'), photoInput('B')], primary_photo_id: 'B' }, newOpId(), 1); }
+  finally { ctx.storePhoto_ = orig; }
+  assert(r.ok); eq(r.data.item.photos.map(p => p.id), ['A']); eq(r.data.item.photo_url, r.data.item.photos[0].url);
+  eq(r.data.photoErrors.map(p => p.id), ['B']);
+  const it = r.data.item, rows = itemRows().length, files = driveFiles.length;
+  for (const patch of [
+    { photos: [{ id: 'foreign', url: it.photo_url }] },
+    { photos: [photoInput('new')], primary_photo_id: 'missing' },
+    { photos: [photoInput('new')], photo: { data: PNG } },
+    { photos: [{ id: 'bad', photo: { data: PNG, mimeType: 'text/plain' } }] }
+  ]) {
+    const invalid = postOp('updateItem', Object.assign({ item_id: it.item_id }, patch), newOpId(), 1);
+    assert(!invalid.ok, JSON.stringify(invalid));
+  }
+  eq(itemRows().length, rows); eq(driveFiles.length, files);
+  const none = postOp('updateItem', { item_id: it.item_id, photos: [], base_version: it.version }, newOpId(), 1);
+  assert(none.ok); eq(none.data.item.photos, []); eq(none.data.item.photo_url, '');
+});
+
+t('写真IDの配列/オブジェクト/数値/nullを登録・編集の保存前に拒否する', () => {
+  const base = postOp('createItem', { name: 'ID型検証', photos: [photoInput('valid-id')] }, newOpId(), 1).data.item;
+  for (const id of [['array-id'], { value: 'object-id' }, 123, null]) {
+    const rows = itemRows().length, files = driveFiles.length, logs = logRows().length;
+    const photos = [photoInput(id)];
+    const created = postOp('createItem', { name: '不正ID', photos }, newOpId(), 1);
+    assert(!created.ok && created.error.code === 'PHOTO_INVALID', JSON.stringify(created));
+    const edited = postOp('updateItem', { item_id: base.item_id, photos }, newOpId(), 1);
+    assert(!edited.ok && edited.error.code === 'PHOTO_INVALID', JSON.stringify(edited));
+    eq(itemRows().length, rows); eq(driveFiles.length, files); eq(logRows().length, logs);
+    eq(post('getItem', { item_id: base.item_id }).data.item.version, base.version);
+  }
+});
+
+t('写真行の確定後に履歴で止まっても、その後の更新を戻さず写真結果/履歴を回復する', () => {
+  const op = newOpId(), payload = { name: '履歴途切れ写真', photos: [photoInput('a'), photoInput('b')] };
+  const restore = failLogAppendOnce(); let r;
+  try { r = postOp('createItem', payload, op, 1); } finally { restore(); }
+  assert(!r.ok && r.error.maybeSaved);
+  const it = post('getItems', {}).data.items.find(i => i.name === payload.name); assert(it && it.photos.length === 2);
+  assert(postOp('updateItem', { item_id: it.item_id, note: '後の入力' }, newOpId(), 1).ok);
+  const files = driveFiles.length; const again = postOp('createItem', payload, op, 2);
+  assert(again.ok && again.data.replayed, JSON.stringify(again)); eq(driveFiles.length, files); eq(again.data.item.note, '後の入力');
+  assert(again.data.log.after_state.includes('photos')); eq(logsOfOp(op).length, 1);
+});
+
+console.log('\n[使われなくなった写真]');
+const drivePhoto = url => driveFiles.find(f => f.id === ctx.fileIdFromPhotoUrl_(url));
+const getPhotoItem = id => post('getItem', { item_id: id }).data.item;
+function failItemWrite(phase, append) {
+  const sh = itemsSheet(), orig = append ? sh.appendRow : sh.getRange;
+  if (append) sh.appendRow = row => { if (phase === 'after') orig(row); throw new Error('項目行の書き込み失敗: ' + phase); };
+  else sh.getRange = (...args) => {
+    const range = orig(...args), set = range.setValues;
+    if (typeof args[0] === 'number' && args[0] > 1 && args[1] === 1) range.setValues = vals => {
+      if (phase === 'after') set(vals); throw new Error('項目行の書き込み失敗: ' + phase);
+    };
+    return range;
+  };
+  return () => { if (append) sh.appendRow = orig; else sh.getRange = orig; };
+}
+
+t('取り外した写真だけを行確定後にゴミ箱へ移し、同ID確認で使用中の写真を移さない', () => {
+  const base = postOp('createItem', { name: '片付け確認', photos: [photoInput('a'), photoInput('b')] }, newOpId(), 1).data.item;
+  const removed = drivePhoto(base.photos[0].url), keep = drivePhoto(base.photos[1].url);
+  const op = newOpId(), payload = { item_id: base.item_id, photos: [base.photos[1]], primary_photo_id: 'b', base_version: base.version };
+  const r = postOp('updateItem', payload, op, 1); assert(r.ok, JSON.stringify(r));
+  assert(removed.trashed, '外した写真が残った'); assert(!keep.trashed); eq(removed.trashCount, 1);
+  const again = postOp('updateItem', payload, op, 2); assert(again.ok && again.data.replayed);
+  assert(!keep.trashed); eq(removed.trashCount, 1); eq(logsOfOp(op).length, 1);
+});
+
+t('別の備品に参照が残っている写真は移さず、最後の参照を外してから移す', () => {
+  const source = postOp('createItem', { name: '共有写真元', photos: [photoInput('shared-source')] }, newOpId(), 1).data.item;
+  const other = post('createItem', { name: '共有写真先' }).data.item;
+  const sh = itemsSheet(), row = sh._data.find(r => String(r[0]) === other.item_id), headers = sh._data[0];
+  row[headers.indexOf('photo_url')] = source.photo_url;
+  row[headers.indexOf('photos')] = JSON.stringify([{ id: 'shared-ref', url: source.photo_url }]);
+  assert(postOp('updateItem', { item_id: source.item_id, photos: [], base_version: source.version }, newOpId(), 1).ok);
+  assert(!drivePhoto(source.photo_url).trashed, '他の備品の写真を移した');
+  assert(postOp('updateItem', { item_id: other.item_id, photos: [] }, newOpId(), 1).ok);
+  assert(drivePhoto(source.photo_url).trashed, '最後の参照を外しても残った');
+});
+
+t('作成直後の属性設定で失敗した写真を片付け、部分成功と再送結果を維持する', () => {
+  const orig = ctx.DriveApp.getFolderById, offset = driveFiles.length; let n = 0;
+  ctx.DriveApp.getFolderById = (...args) => {
+    const folder = orig(...args);
+    return Object.assign({}, folder, { createFile: blob => {
+      const file = folder.createFile(blob);
+      if (++n === 1) file.setDescription = () => { throw new Error('写真の属性設定失敗'); };
+      return file;
+    } });
+  };
+  const op = newOpId(), payload = { name: '作成後失敗', photos: [photoInput('failed'), photoInput('saved')] }; let r;
+  try { r = postOp('createItem', payload, op, 1); } finally { ctx.DriveApp.getFolderById = orig; }
+  assert(r.ok); eq(r.data.photoErrors.map(p => p.id), ['failed']);
+  assert(driveFiles[offset].trashed, '属性設定で残ったファイル'); assert(!driveFiles[offset + 1].trashed);
+  const again = postOp('createItem', payload, op, 2); assert(again.ok && again.data.replayed);
+  eq(driveFiles.length, offset + 2); assert(!driveFiles[offset + 1].trashed);
+});
+
+t('行の書き込み前/後の失敗を実際の参照で判別し、使用中を守って孤立ファイルだけ片付ける', () => {
+  for (const phase of ['before', 'after']) {
+    const base = postOp('createItem', { name: '行失敗-' + phase, photos: [photoInput('old')] }, newOpId(), 1).data.item;
+    const old = drivePhoto(base.photo_url), offset = driveFiles.length;
+    const op = newOpId(), payload = { item_id: base.item_id, photos: [photoInput('new')], base_version: base.version };
+    const restore = failItemWrite(phase, false); let r;
+    try { r = postOp('updateItem', payload, op, 1); } finally { restore(); }
+    assert(!r.ok && r.error.maybeSaved, JSON.stringify(r));
+    const created = driveFiles[offset];
+    eq(created.trashed, phase === 'before'); eq(old.trashed, phase === 'after');
+    if (phase === 'after') {
+      const again = postOp('updateItem', payload, op, 2); assert(again.ok && again.data.replayed, JSON.stringify(again));
+      eq(driveFiles.length, offset + 1); assert(!created.trashed); eq(again.data.item.photos[0].id, 'new');
+    }
+  }
+});
+
+t('新規行の追記前/後の失敗でも実際の参照を確認し、行がある写真を移さない', () => {
+  for (const phase of ['before', 'after']) {
+    const op = newOpId(), payload = { name: '追記失敗-' + phase, photos: [photoInput('new')] }, offset = driveFiles.length;
+    const restore = failItemWrite(phase, true); let r;
+    try { r = postOp('createItem', payload, op, 1); } finally { restore(); }
+    assert(!r.ok && r.error.maybeSaved); eq(driveFiles[offset].trashed, phase === 'before');
+    if (phase === 'after') {
+      const again = postOp('createItem', payload, op, 2); assert(again.ok && again.data.replayed);
+      eq(driveFiles.length, offset + 1); assert(!driveFiles[offset].trashed);
+    }
+  }
+});
+
+t('保存中に版が変われば既存写真を守り、新規の未使用写真だけを片付ける', () => {
+  const base = postOp('createItem', { name: '保存中競合', photos: [photoInput('old')] }, newOpId(), 1).data.item;
+  const orig = ctx.storePhoto_, offset = driveFiles.length;
+  ctx.storePhoto_ = (...args) => {
+    const url = orig(...args), row = itemsSheet()._data.find(r => String(r[0]) === base.item_id);
+    row[itemsSheet()._data[0].indexOf('note')] = '他者の変更';
+    return url;
+  };
+  let r;
+  try { r = postOp('updateItem', { item_id: base.item_id, photos: [photoInput('new')], base_version: base.version }, newOpId(), 1); }
+  finally { ctx.storePhoto_ = orig; }
+  assert(!r.ok && r.error.code === 'CONFLICT'); assert(!drivePhoto(base.photo_url).trashed); assert(driveFiles[offset].trashed);
+  const oldFiles = driveFiles.length;
+  const stale = postOp('updateItem', { item_id: base.item_id, photos: [], base_version: base.version }, newOpId(), 1);
+  assert(!stale.ok && stale.error.code === 'CONFLICT'); eq(driveFiles.length, oldFiles); assert(!drivePhoto(base.photo_url).trashed);
+});
+
+t('履歴追記の失敗でも確定した写真は守り、再送で片付けを繰り返さない', () => {
+  const base = postOp('createItem', { name: '履歴片付け', photos: [photoInput('old')] }, newOpId(), 1).data.item;
+  const old = drivePhoto(base.photo_url), offset = driveFiles.length;
+  const op = newOpId(), payload = { item_id: base.item_id, photos: [photoInput('new')], base_version: base.version };
+  const restore = failLogAppendOnce(); let r;
+  try { r = postOp('updateItem', payload, op, 1); } finally { restore(); }
+  assert(!r.ok && r.error.maybeSaved); assert(old.trashed); assert(!driveFiles[offset].trashed);
+  const again = postOp('updateItem', payload, op, 2); assert(again.ok && again.data.replayed);
+  eq(old.trashCount, 1); assert(!driveFiles[offset].trashed); eq(driveFiles.length, offset + 1);
+});
+
+t('ゴミ箱への移動失敗は保存を失敗にせず、ファイルIDと理由を実行ログへ残す', () => {
+  const base = postOp('createItem', { name: '移動失敗', photos: [photoInput('old')] }, newOpId(), 1).data.item;
+  const old = drivePhoto(base.photo_url), get = ctx.DriveApp.getFileById, con = ctx.console, errors = [];
+  ctx.DriveApp.getFileById = id => { const file = get(id); file.setTrashed = () => { throw new Error('ゴミ箱権限失敗'); }; return file; };
+  ctx.console = Object.assign({}, console, { error: (...args) => errors.push(args.join(' ')) });
+  const op = newOpId(); let r;
+  try { r = postOp('updateItem', { item_id: base.item_id, photos: [] }, op, 1); }
+  finally { ctx.DriveApp.getFileById = get; ctx.console = con; }
+  assert(r.ok, JSON.stringify(r)); eq(r.data.item.photos, []); eq(logsOfOp(op).length, 1); assert(!old.trashed);
+  assert(errors.some(s => s.includes(old.id) && s.includes('ゴミ箱権限失敗')), '片付け失敗の記録なし');
+});
+
+
+t('備品IDは9999を超えても桁を切らず、10000の次も一意に採番する', () => {
+  eq(ctx.nextItemId_([{ item_id: 'ITEM-9999' }]), 'ITEM-10000');
+  eq(ctx.nextItemId_([{ item_id: 'ITEM-9999' }, { item_id: 'ITEM-10000' }]), 'ITEM-10001');
+});
+
+t('履歴IDはシートとキャッシュの両方で999を超えても桁を切らない', () => {
+  const today = ctx.todayCompact_(), key = 'logseq:' + today, saved = cacheStore[key];
+  const sh = makeSheet('boundary', ['log_id']); sh.appendRow(['LOG-' + today + '-999']);
+  try {
+    eq(ctx.nextLogIdFromSheet_(sh, today), 'LOG-' + today + '-1000');
+    cacheStore[key] = '999';
+    eq(ctx.nextLogId_(sh), 'LOG-' + today + '-1000');
+    eq(ctx.nextLogId_(sh), 'LOG-' + today + '-1001');
+    delete cacheStore[key]; sh.appendRow(['LOG-' + today + '-1000']);
+    eq(ctx.nextLogId_(sh), 'LOG-' + today + '-1001');
+  } finally { if (saved === undefined) delete cacheStore[key]; else cacheStore[key] = saved; }
 });
 
 console.log('\n===== ' + pass + ' passed / ' + fail + ' failed =====\n');

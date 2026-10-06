@@ -31,6 +31,7 @@ function doGet(e) {
 function doPost(e) {
   var startedAt = Date.now(); // 計測（debugTiming）の起点。解析前から計る
   WRITE_STARTED_ = false;
+  PHOTO_CANDIDATES_ = null;
   forgetItemsMemo_();
   try {
     if (!e || !e.postData || !e.postData.contents) {
@@ -78,13 +79,14 @@ function withLock_(fn) {
     throw new ApiError_('BUSY', '他の更新処理と競合しました。少し待って再試行してください。', 503);
   }
   lap_('lock');
+  PHOTO_CANDIDATES_ = [];
   try {
     return fn();
   } finally {
     try {
       commitCacheVersions_(); // 書き込みを確定させてから読み取り用キャッシュの版を変える
     } finally {
-      lock.releaseLock();
+      try { cleanupPhotos_(); } finally { lock.releaseLock(); }
     }
   }
 }
@@ -198,6 +200,8 @@ function actCreateItem_(payload, user) {
   var status = sanitizeText_(payload.stock_status, 20) || CONST.STOCK_STATUSES[0];
   assertStockStatus_(status);
 
+  var selection = preparePhotos_(payload, null);
+  if (selection) return createWithPhotos_(payload, user, name, status, selection);
   var photo = (payload.photo && payload.photo.data) ? preparePhoto_(payload.photo) : null;
 
   var input = {
@@ -224,6 +228,21 @@ function actCreateItem_(payload, user) {
   var res = { item: created, log: log };
   if (photo) attachPhoto_(res, photo, user);
   return res;
+}
+
+/** PHOTO.md 項目4: 写真結果と操作結果を備品の行と一緒に確定する。 */
+function createWithPhotos_(payload, user, name, status, selection) {
+  var rows = readItems_().rows;
+  var id = sanitizeText_(payload.item_id, 64) || nextItemId_(rows);
+  if (rows.some(function (r) { return r.item_id === id; })) throw new ApiError_('ITEM_ID_DUPLICATED', '備品IDは既に使われています。', 409);
+  var saved = storePhotos_(selection, id, user.email);
+  var after = { name: name, category: sanitizeText_(payload.category, 60), location: sanitizeText_(payload.location, 120),
+    stock_status: status, quantity: toNumOrNull_(payload.quantity), photos: saved.photos, photo_url: saved.photo_url, _photo_errors: saved.errors };
+  var input = Object.assign({}, payload, { item_id: id, name: name, stock_status: status, photos: saved.photos,
+    photo_url: saved.photo_url, photo_ops: photoOpState_(null, '', after, saved.errors) });
+  var created = insertItem_(input, user.email);
+  var log = appendLog_(id, user.email, CONST.ACTION_CREATE, '', after);
+  return photoResponse_({ item: created, log: log }, saved.errors);
 }
 
 /**
@@ -310,21 +329,38 @@ function actUpdateItem_(payload, user) {
     assertStockStatus_(st);
     patch.stock_status = st;
   }
-  if (payload.photo && payload.photo.data) {
+  var selection = preparePhotos_(payload, found.item);
+  var photoErrors = [];
+  if (selection) {
+    recordOldPhotos_(found.item);
+    var saved = storePhotos_(selection, itemId, user.email);
+    patch.photos = saved.photos;
+    patch.photo_url = saved.photo_url;
+    photoErrors = saved.errors;
+  } else if (payload.photo && payload.photo.data) {
+    recordOldPhotos_(found.item);
     patch.photo_url = savePhoto_(payload.photo, itemId, user.email);
+    var list = found.item.photos.slice();
+    var primaryIndex = list.findIndex(function (p) { return p.url === found.item.photo_url; });
+    var replacement = { id: legacyPhotoId_(patch.photo_url), url: patch.photo_url };
+    if (primaryIndex >= 0) list[primaryIndex] = replacement; else list.push(replacement);
+    patch.photos = list;
   }
 
   if (!Object.keys(patch).length) {
     throw new ApiError_('VALIDATION_ERROR', '更新する項目がありません。', 400);
   }
 
-  var updated = updateItemRow_(found.item, patch, found.ctx, user.email);
-
   var beforeDiff = {};
   Object.keys(patch).forEach(function (k) { beforeDiff[k] = before[k]; });
-  var log = appendLog_(itemId, user.email, CONST.ACTION_UPDATE, beforeDiff, patch);
-
-  return { item: updated, log: log };
+  var after = Object.assign({}, patch);
+  if (selection) {
+    after._photo_errors = photoErrors;
+    patch.photo_ops = photoOpState_(found.item, beforeDiff, after, photoErrors);
+  }
+  var updated = updateItemRow_(found.item, patch, found.ctx, user.email);
+  var log = appendLog_(itemId, user.email, CONST.ACTION_UPDATE, beforeDiff, after);
+  return photoResponse_({ item: updated, log: log }, photoErrors);
 }
 
 /** 論理削除。payload: { item_id, base_version? } */

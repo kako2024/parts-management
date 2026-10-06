@@ -194,9 +194,18 @@ function finishDoneOp_(op, done, payload, user) {
 
   CURRENT_OP_MARK_ = op.mark;
   try {
-    var log = done.log || appendLog_(done.itemId, user.email, resumeActionType_(op.action), '',
-      resumeAfterState_(op.action, payload));
+    var photoState = null;
+    if (payload.photos !== undefined) {
+      try { photoState = JSON.parse(found.item._photo_ops || '{}')[op.id]; } catch (e) {}
+    }
+    var log = done.log || appendLog_(done.itemId, user.email, resumeActionType_(op.action),
+      photoState ? photoState.before : '', photoState ? photoState.after : resumeAfterState_(op.action, payload));
     var res = { item: item, log: log, replayed: true };
+    if (payload.photos !== undefined) {
+      var recorded = {};
+      try { recorded = JSON.parse(log.after_state); } catch (e) {}
+      photoResponse_(res, photoState ? photoState.errors : recorded._photo_errors);
+    }
     // 登録で写真だけ保存できていなかったら、写真の保存をもう一度試す
     if (op.action === 'createItem' && payload.photo && payload.photo.data && !item.photo_url) {
       attachPhoto_(res, preparePhoto_(payload.photo), user);

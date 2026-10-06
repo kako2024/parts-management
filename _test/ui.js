@@ -28,6 +28,8 @@ const apiLose = {};   // action ごとに、処理した後で応答だけを失
 const opCalls = [];   // 操作 ID つきの送信 { action, op_id, op_attempt }
 const opResults = {}; // 操作 ID ごとの最初の結果（本物の GAS と同じく、送り直しは二重に実行しない）
 const lastPayload = {}; // action ごとに最後に受け取った payload（操作 ID を除く）
+let photoFailAt = 0;
+let photoWrites = 0;
 let photoFail = false; // 登録で写真の保存だけを失敗させる
 const conflictNoItem = {}; // action ごとに、最新の備品なしの CONFLICT を返す（行が消えたときの GAS と同じ）
 let forbidden = false;     // 真なら、ログイン確認を 403（グループのメンバーではない）で断る
@@ -52,9 +54,36 @@ function addLog(itemId, type, before, after) {
 /** 備品の版（本物は gas/Repository.gs の itemVersion_）。検証が items を直接書き換えても変わる */
 const ITEM_FIELDS = ['item_id', 'name', 'category', 'location', 'stock_status', 'quantity', 'photo_url', 'note', 'updated_at', 'updated_by', 'is_deleted'];
 function versionOf(it) {
-  return require('crypto').createHash('sha1').update(JSON.stringify(ITEM_FIELDS.map(k => it[k] === undefined ? null : it[k]))).digest('hex').slice(0, 16);
+  return require('crypto').createHash('sha1').update(JSON.stringify(ITEM_FIELDS.map(k => it[k] === undefined ? null : it[k]).concat([mockPhotos(it)]))).digest('hex').slice(0, 16);
 }
-function withVersion(it) { return it ? Object.assign({}, it, { version: versionOf(it) }) : it; }
+function mockPhotos(it) {
+  if (Array.isArray(it.photos)) return it.photos;
+  if (!it.photo_url) return [];
+  const m = it.photo_url.match(/\/d\/([^/?#]+)/) || it.photo_url.match(/[?&]id=([^&#]+)/);
+  let hash = 2166136261;
+  for (const c of it.photo_url) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619) >>> 0;
+  return [{ id: 'legacy-' + (m ? m[1] : hash.toString(16)), url: it.photo_url }];
+}
+function withVersion(it) { return it ? Object.assign({}, it, { photos: mockPhotos(it), version: versionOf(it) }) : it; }
+function saveMockPhotos(payload, it) {
+  if (payload.photos === undefined) return {};
+  const old = mockPhotos(it), errors = []; let nth = 0;
+  if (payload.photos.length > 4) throw new Error('模擬API: 上限超過');
+  const photos = payload.photos.map(p => {
+    if (!p.photo) {
+      if (!old.some(x => x.id === p.id && x.url === p.url)) throw new Error('模擬API: 不正な既存参照');
+      return { id: p.id, url: p.url };
+    }
+    if (old.some(x => x.id === p.id)) throw new Error('模擬API: 保存済みIDへ画像の再送');
+    nth++;
+    if (photoFail || nth === photoFailAt) { errors.push({ id: p.id, message: '写真を保存できませんでした（模擬）' }); return null; }
+    photoWrites++;
+    return { id: p.id, url: 'https://lh3.googleusercontent.com/d/mock-' + photoWrites };
+  }).filter(Boolean);
+  it.photos = photos;
+  it.photo_url = (photos.find(p => p.id === payload.primary_photo_id) || photos[0] || {}).url || '';
+  return errors.length ? { photoErrors: errors, photoError: errors.length + '枚失敗' } : {};
+}
 /** 応答の備品に版を付ける */
 function addVersions(res) {
   const d = res.ok ? res.data : res.error && res.error.data;
@@ -77,7 +106,7 @@ function handleApiInner(body) {
   const payload = Object.assign({}, req.payload || {});
   const opId = payload.op_id;
   if (!opId) return handleAction(req.action, payload, req.idToken);
-  opCalls.push({ action: req.action, op_id: opId, op_attempt: payload.op_attempt });
+  opCalls.push({ action: req.action, op_id: opId, op_attempt: payload.op_attempt, payload: JSON.parse(JSON.stringify(payload)) });
   delete payload.op_id;
   delete payload.op_attempt;
   const key = req.action + JSON.stringify(payload);
@@ -87,7 +116,7 @@ function handleApiInner(body) {
     if (done.key !== key) {
       return { ok: false, error: { code: 'OP_MISMATCH', message: 'この操作はすでに保存されています', status: 409, data: { item: done.result.data.item } } };
     }
-    const data = Object.assign({}, done.result.data, { replayed: true });
+    const data = Object.assign({}, done.result.data, { item: items.find(i => i.item_id === done.result.data.item.item_id), replayed: true });
     if (req.action === 'createItem' && payload.photo && !data.item.photo_url && !photoFail) {
       data.item.photo_url = 'https://lh3.googleusercontent.com/d/mock';
       delete data.photoError;
@@ -144,10 +173,12 @@ function handleAction(action, payload, idToken) {
     case 'createItem': {
       const id = 'ITEM-000' + (items.length + 1);
       const it = Object.assign({ item_id: id, photo_url: payload.photo && !photoFail ? 'https://lh3.googleusercontent.com/d/mock' : '', is_deleted: false, updated_at: '2026-08-13 10:10:00', updated_by: 'taro@example.com' }, payload);
-      delete it.photo;
+      delete it.photo; delete it.photos;
+      const photoResult = saveMockPhotos(payload, it);
+      delete it.primary_photo_id;
       items.push(it);
       const log = addLog(it.item_id, 'CREATE', '', { name: it.name, stock_status: it.stock_status });
-      const data = { item: it, log };
+      const data = Object.assign({ item: it, log }, photoResult);
       if (payload.photo && photoFail) data.photoError = '写真を保存できませんでした（模擬）。';
       return { ok: true, data };
     }
@@ -162,9 +193,12 @@ function handleAction(action, payload, idToken) {
       delete patch.item_id;
       delete patch.base_version;
       if (patch.photo) { patch.photo_url = 'https://lh3.googleusercontent.com/d/mock-edit'; delete patch.photo; }
+      const before = { photos: mockPhotos(it) };
+      const photoResult = saveMockPhotos(payload, it);
+      delete patch.photos; delete patch.primary_photo_id;
       Object.assign(it, patch);
-      const log = addLog(it.item_id, 'UPDATE', {}, patch);
-      return { ok: true, data: { item: it, log } };
+      const log = addLog(it.item_id, 'UPDATE', before, Object.assign({}, patch, payload.photos ? { photos: it.photos } : {}));
+      return { ok: true, data: Object.assign({ item: it, log }, photoResult) };
     }
     case 'deleteItem': {
       const it = items.find(i => i.item_id === payload.item_id);
@@ -243,6 +277,13 @@ const server = http.createServer((req, res) => {
   // ネットワークが CDN に届かない環境向け。ローカルビルドがあるときだけ差し替える。
   //   npx tailwindcss -i tw-in.css -o /tmp/tw.css --content "./docs/**/*.{html,js}" --minify
   //   npx esbuild --bundle --global-name=QRCode node_modules/qrcode/lib/browser.js --outfile=/tmp/qrcode.min.js
+  // 同じCDNスクリプトを一時保存して指定できる。外部通信の不安定さを検証から除く。
+  const tailwindScript = process.env.TAILWIND_SCRIPT || '/tmp/parts-tailwindcdn.js';
+  if (fs.existsSync(tailwindScript)) {
+    const body = fs.readFileSync(tailwindScript, 'utf8');
+    await ctx.route('https://cdn.tailwindcss.com', r => r.fulfill({ status: 200, contentType: 'text/javascript', body }));
+    await ctx.route('https://cdn.tailwindcss.com/**', r => r.fulfill({ status: 200, contentType: 'text/javascript', body }));
+  }
   if (fs.existsSync('/tmp/tw.css')) {
     const TW = fs.readFileSync('/tmp/tw.css', 'utf8');
     const body = 'document.head.insertAdjacentHTML("beforeend","<style>"+' + JSON.stringify(TW) + '+"</style>");';
@@ -298,7 +339,10 @@ const server = http.createServer((req, res) => {
   };
 
   let fail = 0;
+  const onlyAt = process.argv.indexOf('--only');
+  const only = onlyAt < 0 ? '' : process.argv[onlyAt + 1];
   const check = async (label, fn) => {
+    if (only && !label.includes(only) && !/^ログイン画面|^ログイン後|^JS エラー/.test(label)) return;
     try { await fn(); console.log('  ok   ' + label); }
     catch (e) { console.log('  FAIL ' + label + '\n       ' + e.message); fail++; }
   };
@@ -722,21 +766,22 @@ const server = http.createServer((req, res) => {
     photoFail = true;
     try {
       await page.click('#item-form button[type=submit]');
-      await errorToastMatching('写真は保存できませんでした');
+      await errorToastMatching('一部の写真を保存できませんでした');
       await page.waitForSelector('#view-detail:not(.hidden) #btn-photo-retry');
     } finally { photoFail = false; }
     const created = items.find(i => i.name === '写真だけ失敗');
     if (!created || created.photo_url) throw new Error('写真なしで登録されていない');
     created.note = '他の人が変えた備考';          // 送り直すまでの間に、他の人が備考を変えた
     await page.click('#btn-photo-retry');
-    // 画面が読んだ後に変わっているので、まず競合で止まり、最新（他の人の備考）が表示される
-    await errorToastMatching('他の人が先にこの備品を更新していた');
-    await page.waitForFunction(() => document.querySelector('#view-detail dl').textContent.includes('他の人が変えた備考'));
-    await page.click('#btn-photo-retry');
-    await page.waitForSelector('#btn-photo-retry', { state: 'detached', timeout: 5000 });
+    // 競合後は最新版と追加下書きを編集フォームで再確認する。
+    await errorToastMatching('他の人が更新していました');
+    await page.waitForSelector('#view-form:not(.hidden) #conflict-notice');
+    if (await page.inputValue('#f-note') !== '他の人が変えた備考') throw new Error('最新の備考を保持していない');
+    await page.click('#item-form button[type=submit]');
+    await page.waitForSelector('#view-detail:not(.hidden)');
     await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
     const keys = Object.keys(lastPayload.updateItem).sort().join(',');
-    if (keys !== 'base_version,item_id,photo') throw new Error('写真以外も送った: ' + keys);
+    if (keys !== 'base_version,item_id,photos,primary_photo_id') throw new Error('写真以外も送った: ' + keys);
     if (created.note !== '他の人が変えた備考') throw new Error('他の人の変更を上書きした: ' + created.note);
     if (!created.photo_url) throw new Error('写真が保存されていない');
     if (countByName('写真だけ失敗') !== 1) throw new Error('写真の送り直しで備品が増えた');
@@ -1025,7 +1070,8 @@ const server = http.createServer((req, res) => {
 
   await check('詳細の写真を読み込めなければ「再読み込み」を出し、押すと取り直す。読み直しは続かない', async () => {
     const it = items.find(i => i.item_id === 'ITEM-0002');
-    const old = it.photo_url;
+    const old = it.photo_url, oldPhotos = it.photos;
+    delete it.photos;
     it.photo_url = `http://localhost:${PORT}/mockphoto/broken-detail-${Date.now()}`;
     try {
       await openDetailById('ITEM-0002', it.photo_url);
@@ -1041,12 +1087,13 @@ const server = http.createServer((req, res) => {
       await page.waitForSelector('#view-detail #btn-photo-reload', { timeout: 6000 });
       await page.click('#btn-photo-reload');
       await page.waitForFunction(() => { const i = document.querySelector('#view-detail img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 5000 });
-    } finally { it.photo_url = old; }
+    } finally { it.photo_url = old; it.photos = oldPhotos; }
   });
 
   await check('読み直す前に画面を離れたら、写真を取りに行かない', async () => {
     const it = items.find(i => i.item_id === 'ITEM-0002');
-    const old = it.photo_url;
+    const old = it.photo_url, oldPhotos = it.photos;
+    delete it.photos;
     it.photo_url = `http://localhost:${PORT}/mockphoto/broken-leave-${Date.now()}`;
     try {
       await openDetailById('ITEM-0002', it.photo_url);
@@ -1054,7 +1101,7 @@ const server = http.createServer((req, res) => {
       await page.click('[data-nav="scan"]');                  // 1 秒後の読み直しの前に別の画面へ移る
       await page.waitForTimeout(1800);
       if (photoCount(it.photo_url) !== 1) throw new Error('画面を離れた後に取りに行った: ' + photoCount(it.photo_url));
-    } finally { it.photo_url = old; }
+    } finally { it.photo_url = old; it.photos = oldPhotos; }
   });
 
   /* ---------- 要補充の入口（PLAN-2 項目 5） ---------- */
@@ -1115,7 +1162,8 @@ const server = http.createServer((req, res) => {
 
   await check('Drive の写真は表示の大きさに縮めた URL で取る', async () => {
     const it = items.find(i => i.item_id === 'ITEM-0003');
-    const old = it.photo_url;
+    const old = it.photo_url, oldPhotos = it.photos;
+    delete it.photos;
     it.photo_url = 'https://lh3.googleusercontent.com/d/FILEID123';
     driveRequests.length = 0;
     try {
@@ -1131,13 +1179,14 @@ const server = http.createServer((req, res) => {
       await page.waitForTimeout(300);
       if (driveRequests.some(u => u.endsWith('/FILEID123'))) throw new Error('原寸を取りに行った');
     } finally {
-      it.photo_url = old;
+      it.photo_url = old; it.photos = oldPhotos;
     }
   });
 
   await check('Drive の写真は Referer を付けずに取る（lh3 の 429 と ORB を避ける）', async () => {
     const it = items.find(i => i.item_id === 'ITEM-0003');
-    const old = it.photo_url;
+    const old = it.photo_url, oldPhotos = it.photos;
+    delete it.photos;
     it.photo_url = 'https://lh3.googleusercontent.com/d/FILEID456';
     driveRequests.length = 0;
     driveReferers.length = 0;
@@ -1154,7 +1203,7 @@ const server = http.createServer((req, res) => {
       const policies = await page.$$eval('#item-list img, #view-detail img', els => els.map(e => e.referrerPolicy));
       if (policies.some(p => p !== 'no-referrer')) throw new Error('referrerpolicy: ' + policies.join(','));
     } finally {
-      it.photo_url = old;
+      it.photo_url = old; it.photos = oldPhotos;
     }
   });
 
@@ -1171,6 +1220,330 @@ const server = http.createServer((req, res) => {
     await p2.screenshot({ path: f, fullPage: true });
     shots.push(f);
     await p2.close();
+  });
+
+  // PHOTO.md 項目2: OS選択画面を迂回して両入力の同じ保存経路を確認する。
+  const generatedPhoto = { name: 'generated.png', mimeType: 'image/png', buffer: Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') };
+  for (const input of ['#f-photo', '#f-photo-album']) {
+    await check('撮影/アルバムの登録・編集・取消・失敗・競合: ' + input, async () => {
+      await page.click('[data-nav="new"]');
+      const names = ['撮影する', 'アルバムから選ぶ'];
+      for (const name of names) {
+        const b = page.getByRole('button', { name, exact: true });
+        await b.focus();
+        if (!(await b.evaluate(e => e === document.activeElement))) throw new Error('キーボードでフォーカスできない');
+        const box = await b.boundingBox();
+        if (!box || box.height < 44 || box.width < 44 || box.x < 0 || box.x + box.width > 390) throw new Error('ボタンの大きさ/位置: ' + JSON.stringify(box));
+      }
+      if ((await page.getAttribute('#f-photo', 'capture')) !== 'environment') throw new Error('captureなし');
+      if ((await page.getAttribute('#f-photo-album', 'capture')) !== null) throw new Error('アルバムにcaptureあり');
+      const name = '両入力テスト' + input;
+      await page.fill('#f-name', name);
+      await page.setInputFiles(input, generatedPhoto);
+      await page.waitForSelector('#photo-slot img');
+      await page.click('#btn-photo-clear');
+      if (await page.$('#photo-slot img')) throw new Error('取消で下書きが残る');
+      await page.setInputFiles(input, generatedPhoto);
+      await page.waitForSelector('#photo-slot img');
+      apiDrop.createItem = true;
+      try {
+        await page.click('#item-form button[type=submit]');
+        await errorToastMatching('保存できたか確認できませんでした');
+        await page.waitForSelector('#view-form:not(.hidden) #photo-slot img');
+        if ((await page.inputValue('#f-name')) !== name) throw new Error('失敗で入力が消える');
+      } finally { delete apiDrop.createItem; }
+      photoFail = true;
+      try {
+        await page.click('#item-form button[type=submit]');
+        await page.waitForSelector('#view-detail:not(.hidden) #btn-photo-retry');
+      } finally { photoFail = false; }
+      await page.click('#btn-photo-retry');
+      await page.waitForSelector('#saving-indicator', { state: 'detached' });
+      const it = items.find(i => i.name === name);
+      if (!it || !it.photo_url) throw new Error('写真の再送失敗');
+      await page.click('#btn-edit');
+      const original = await page.getAttribute('#photo-slot img', 'src');
+      await page.setInputFiles(input, generatedPhoto);
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('#photo-slot img')).some(i => i.src.startsWith('data:')));
+      await page.click('#btn-photo-clear');
+      if ((await page.getAttribute('#photo-slot img', 'src')) !== original) throw new Error('取消で元写真に戻らない');
+      await page.setInputFiles(input, generatedPhoto);
+      await page.waitForFunction(() => Array.from(document.querySelectorAll('#photo-slot img')).some(i => i.src.startsWith('data:')));
+      await page.fill('#f-note', '下書き');
+      it.note = '他者';
+      await page.click('#item-form button[type=submit]');
+      await page.waitForSelector('#view-form:not(.hidden) #conflict-notice');
+      if (!(await page.locator('#photo-slot img[src^="data:"]').count())) throw new Error('競合で写真が消える');
+      await page.click('#item-form button[type=submit]');
+      await page.waitForSelector('#saving-indicator', { state: 'detached' });
+      if (it.note !== '下書き' || !it.photo_url) throw new Error('編集保存失敗');
+    });
+  }
+
+  await check('8000px JPEGを1280px以下へ縮め、上限未満のJPEGで保存する', async () => {
+    const source = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 8000; c.height = 6000;
+      const x = c.getContext('2d'); x.fillStyle = '#ec481f'; x.fillRect(0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.95).split(',')[1];
+    });
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', '高画素写真');
+    await page.setInputFiles('#f-photo-album', { name: 'large.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(source, 'base64') });
+    await page.waitForSelector('#photo-slot img');
+    const dims = await page.locator('#photo-slot img').evaluate(i => [i.naturalWidth, i.naturalHeight]);
+    if (dims.join(',') !== '1280,960') throw new Error('圧縮寸法: ' + dims);
+    await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    const p = lastPayload.createItem.photos[0].photo;
+    if (!p || p.mimeType !== 'image/jpeg' || Buffer.from(p.data, 'base64').length > 6 * 1024 * 1024) throw new Error('保存形式/サイズ');
+  });
+
+  await check('EXIF orientation=6の写真が回転され、画素位置と保存JPEGの向きが正しい', async () => {
+    const source = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 80; c.height = 40;
+      const x = c.getContext('2d'); x.fillStyle = '#ff0000'; x.fillRect(0, 0, 40, 40);
+      x.fillStyle = '#0000ff'; x.fillRect(40, 0, 40, 40);
+      return c.toDataURL('image/jpeg', 0.95).split(',')[1];
+    });
+    // EXIFのTIFF little-endian、orientation=6（90度時計回り）。画像は実物を使わず生成。
+    const exif = Buffer.from('45786966000049492a0008000000010012010300010000000600000000000000', 'hex');
+    const header = Buffer.alloc(4); header.writeUInt16BE(0xffe1, 0); header.writeUInt16BE(exif.length + 2, 2);
+    const jpeg = Buffer.from(source, 'base64'); const oriented = Buffer.concat([jpeg.subarray(0, 2), header, exif, jpeg.subarray(2)]);
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', 'EXIF写真');
+    await page.setInputFiles('#f-photo-album', { name: 'exif.jpg', mimeType: 'image/jpeg', buffer: oriented });
+    await page.waitForSelector('#photo-slot img');
+    const values = await page.locator('#photo-slot img').evaluate(i => {
+      const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight;
+      const x = c.getContext('2d'); x.drawImage(i, 0, 0);
+      return { w: c.width, h: c.height, top: Array.from(x.getImageData(20, 10, 1, 1).data), bottom: Array.from(x.getImageData(20, 70, 1, 1).data) };
+    });
+    if (values.w !== 40 || values.h !== 80 || values.top[0] < 180 || values.bottom[2] < 180) throw new Error('EXIF結果: ' + JSON.stringify(values));
+    await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    if (lastPayload.createItem.photos[0].photo.mimeType !== 'image/jpeg') throw new Error('保存形式');
+  });
+
+  await check('非画像・読めない画像・canvas例外で対処を表示し以前の下書きを保つ', async () => {
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', '下書き保持');
+    await page.setInputFiles('#f-photo-album', generatedPhoto); await page.waitForSelector('#photo-slot img');
+    const original = await page.getAttribute('#photo-slot img', 'src');
+    for (const f of [{ name: 'text.txt', mimeType: 'text/plain', buffer: Buffer.from('text') },
+      { name: 'fake.heic', mimeType: 'image/heic', buffer: Buffer.from('unsupported') }]) {
+      await page.setInputFiles('#f-photo-album', f);
+      await page.waitForFunction(() => document.querySelector('#photo-error').textContent.includes('JPEG'));
+      if ((await page.getAttribute('#photo-slot img', 'src')) !== original) throw new Error('下書きを消した');
+      if (await page.isVisible('#loading')) throw new Error('処理中が残る');
+    }
+    await page.evaluate(() => { window.__toDataURL = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.toDataURL = () => { throw new Error('模擬canvas失敗'); }; });
+    try {
+      await page.setInputFiles('#f-photo-album', generatedPhoto);
+      await page.waitForFunction(() => document.querySelector('#photo-error').textContent.includes('小さいJPEG'));
+      if ((await page.getAttribute('#photo-slot img', 'src')) !== original) throw new Error('canvas失敗で下書きを消した');
+      if (await page.isVisible('#loading')) throw new Error('処理中が残る');
+    } finally { await page.evaluate(() => { HTMLCanvasElement.prototype.toDataURL = window.__toDataURL; }); }
+  });
+
+  // PHOTO.md 項目5: 全置換APIを使う複数写真の操作と失敗回復。
+  const waitPhotos = async n => page.waitForFunction(n => document.querySelectorAll('#photo-slot [data-form-photo]').length === n && document.querySelector('#loading').classList.contains('hidden'), n);
+  let multi;
+  await check('複数選択・上限・代表・取り外し・取消をモバイルで保存する', async () => {
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', '複数写真');
+    if (await page.getAttribute('#f-photo-album', 'multiple') === null) throw new Error('multipleなし');
+    await page.setInputFiles('#f-photo-album', Array.from({ length: 5 }, (_, i) => ({ ...generatedPhoto, name: 'over' + i + '.png' })));
+    await page.waitForFunction(() => document.querySelector('#photo-error').textContent.includes('あと4枚'));
+    if (await page.locator('#photo-slot img').count()) throw new Error('超過選択を追加した');
+    await page.setInputFiles('#f-photo-album', Array.from({ length: 4 }, (_, i) => ({ ...generatedPhoto, name: 'multi' + i + '.png' })));
+    await waitPhotos(4);
+    for (const id of ['#btn-photo-pick', '#btn-photo-album']) if (!(await page.isDisabled(id))) throw new Error('上限で無効にならない');
+    if (!(await page.textContent('#photo-limit')).includes('外してください')) throw new Error('上限の対処なし');
+    await page.getByRole('button', { name: '写真3を代表にする', exact: true }).click();
+    await page.screenshot({ path: path.join(__dirname, 'shot-9-photos-form.png'), fullPage: true });
+    await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    multi = items.find(i => i.name === '複数写真');
+    if (multi.photos.length !== 4 || multi.photo_url !== multi.photos[2].url) throw new Error('4枚/代表保存');
+    if (await page.locator('#view-detail [data-detail-photo]').count() !== 4) throw new Error('詳細の全写真');
+    await page.click('#btn-edit');
+    await page.getByRole('button', { name: '写真3を外す', exact: true }).click();
+    if (!(await page.textContent('#photo-slot figure:first-child')).includes('代表')) throw new Error('代表を外した後の先頭');
+    await page.click('#btn-photo-clear'); await waitPhotos(4);
+    if (await page.getByRole('button', { name: '写真3を代表にする', exact: true }).getAttribute('aria-pressed') !== 'true') throw new Error('取消で代表が戻らない');
+    await page.getByRole('button', { name: '写真3を外す', exact: true }).click();
+    await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    if (multi.photos.length !== 3 || multi.photo_url !== multi.photos[0].url) throw new Error('取り外し保存');
+  });
+
+  await check('一覧は代表1枚だけ取得、拡大は操作後に取得しEscape/閉じるでフォーカスを戻す', async () => {
+    driveRequests.length = 0;
+    await page.click('[data-nav="list"]');
+    const row = page.locator('[data-item-id="' + multi.item_id + '"]'); await row.scrollIntoViewIfNeeded();
+    await page.waitForFunction(id => { const img = document.querySelector('[data-item-id="' + id + '"] img'); return img && img.complete; }, multi.item_id);
+    if (await row.locator('img').count() !== 1) throw new Error('一覧で複数画像');
+    for (const p of multi.photos.slice(1)) if (driveRequests.some(u => u.includes('/d/' + p.url.split('/').pop()))) throw new Error('一覧で非代表を取得');
+    if (!(await row.locator('img').getAttribute('src')).includes(multi.photo_url.split('/').pop())) throw new Error('一覧の代表');
+    await row.click(); await page.waitForSelector('#view-detail:not(.hidden)');
+    const b = page.getByRole('button', { name: '写真2を拡大', exact: true }); await b.focus(); await page.keyboard.press('Enter');
+    await page.getByRole('dialog', { name: '写真2の拡大', exact: true }).waitFor();
+    if (await page.locator('dialog img').getAttribute('referrerpolicy') !== 'no-referrer') throw new Error('拡大のReferer');
+    await page.keyboard.press('Escape'); await page.waitForSelector('dialog', { state: 'detached' });
+    if (!(await b.evaluate(e => e === document.activeElement))) throw new Error('Escape後のフォーカス');
+    await b.click(); await page.getByRole('button', { name: '閉じる', exact: true }).click();
+    await page.waitForSelector('dialog', { state: 'detached' });
+    if (!(await b.evaluate(e => e === document.activeElement))) throw new Error('閉じる後のフォーカス');
+  });
+
+  await check('部分失敗だけ新操作で再送し、成功参照・順序・希望の代表を保持する', async () => {
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', '部分失敗写真');
+    await page.setInputFiles('#f-photo-album', [generatedPhoto, { ...generatedPhoto, name: 'second.png' }]); await waitPhotos(2);
+    await page.getByRole('button', { name: '写真2を代表にする', exact: true }).click();
+    photoFailAt = 2;
+    try { await page.click('#item-form button[type=submit]'); await page.waitForSelector('#view-detail:not(.hidden) #btn-photo-retry'); }
+    finally { photoFailAt = 0; }
+    const it = items.find(i => i.name === '部分失敗写真'), first = it.photos[0], writes = photoWrites;
+    if (!(await page.textContent('#photo-retry')).includes('写真2')) throw new Error('失敗の写真番号なし');
+    const createOp = opCalls.filter(c => c.action === 'createItem').at(-1).op_id;
+    await page.click('#btn-photo-retry'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    const sent = lastPayload.updateItem;
+    if (sent.photos[0].url !== first.url || sent.photos[0].photo || !sent.photos[1].photo) throw new Error('成功参照/失敗画像の再送');
+    if (it.photos.length !== 2 || photoWrites !== writes + 1 || it.photo_url !== it.photos[1].url) throw new Error('順序/代表/重複');
+    if (opCalls.filter(c => c.action === 'updateItem').at(-1).op_id === createOp) throw new Error('部分成功で旧操作ID再利用');
+  });
+
+  await check('部分失敗から編集しても失敗下書きと代表の希望を保持し、保存後は再送案内を消す', async () => {
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', '部分失敗から編集');
+    await page.setInputFiles('#f-photo-album', [generatedPhoto, generatedPhoto]); await waitPhotos(2);
+    await page.getByRole('button', { name: '写真2を代表にする', exact: true }).click();
+    photoFailAt = 2;
+    try { await page.click('#item-form button[type=submit]'); await page.waitForSelector('#view-detail:not(.hidden) #btn-photo-retry'); }
+    finally { photoFailAt = 0; }
+    await page.click('#btn-edit');
+    if (await page.locator('#photo-slot img[src^="data:"]').count() !== 1) throw new Error('編集へ戻ると失敗下書きが消える');
+    if (await page.getByRole('button', { name: '写真2を代表にする', exact: true }).getAttribute('aria-pressed') !== 'true') throw new Error('代表の希望を失った');
+    await page.fill('#f-note', '編集から回復');
+    await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    const it = items.find(i => i.name === '部分失敗から編集');
+    if (it.photos.length !== 2 || it.photo_url !== it.photos[1].url || await page.locator('#photo-retry').count()) throw new Error('編集回復後の状態');
+  });
+
+  await check('写真再送の応答喪失後も同じ操作ID・payload・版で確認し重複しない', async () => {
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', '再送応答喪失');
+    await page.setInputFiles('#f-photo-album', [generatedPhoto, generatedPhoto]); await waitPhotos(2);
+    photoFail = true;
+    try { await page.click('#item-form button[type=submit]'); await page.waitForSelector('#view-detail:not(.hidden) #btn-photo-retry'); }
+    finally { photoFail = false; }
+    const before = opCalls.length, writes = photoWrites;
+    apiLose.updateItem = Infinity;
+    try { await page.click('#btn-photo-retry'); await errorToastMatching('写真を保存できたか確認できませんでした'); }
+    finally { delete apiLose.updateItem; }
+    const attempts = opCalls.slice(before);
+    await page.click('#btn-photo-retry'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    const final = opCalls.at(-1);
+    if (attempts.some(c => c.op_id !== final.op_id || JSON.stringify({ ...c.payload, op_attempt: 0 }) !== JSON.stringify({ ...final.payload, op_attempt: 0 }))) throw new Error('不明結果の送信内容が変化');
+    if (photoWrites !== writes + 2 || items.find(i => i.name === '再送応答喪失').photos.length !== 2) throw new Error('再送で重複');
+  });
+
+  await check('写真競合で他者の4枚を保持し、追加下書きを待機させ利用者が再判断する', async () => {
+    await openDetailOf(multi.item_id); await page.click('#btn-edit');
+    await page.setInputFiles('#f-photo-album', generatedPhoto); await waitPhotos(4);
+    const old = multi.photos.slice();
+    const other = { id: 'other-new', url: 'https://lh3.googleusercontent.com/d/other-new' };
+    multi.photos = old.concat([other]); multi.photo_url = other.url;
+    await page.click('#item-form button[type=submit]'); await page.waitForSelector('#view-form:not(.hidden) #conflict-notice');
+    await waitPhotos(5);
+    if (await page.locator('#photo-slot img[src^="data:"]').count() !== 1) throw new Error('新規下書きを消した');
+    if (!(await page.textContent('#photo-slot')).includes('待機中')) throw new Error('上限下書きの待機なし');
+    await page.click('#item-form button[type=submit]');
+    await page.waitForFunction(() => document.querySelector('#photo-error').textContent.includes('待機中'));
+    if (multi.photos.length !== 4) throw new Error('待機を黙って保存した');
+    await page.getByRole('button', { name: '写真1を外す', exact: true }).click();
+    await page.getByRole('button', { name: '追加する', exact: true }).click(); await waitPhotos(4);
+    await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+    if (multi.photos.length !== 4 || !multi.photos.some(p => p.id === other.id)) throw new Error('他者写真を消した');
+  });
+
+  await check('詳細の失敗表示と再読み込みは写真ごとで、成功写真を再取得しない', async () => {
+    const stamp = Date.now();
+    multi.photos = [{ id: 'ok', url: `http://localhost:${PORT}/mockphoto/ok-multi-${stamp}` }, { id: 'bad', url: `http://localhost:${PORT}/mockphoto/fail2-multi-${stamp}` }];
+    multi.photo_url = multi.photos[0].url;
+    await openDetailOf(multi.item_id);
+    await page.waitForSelector('#view-detail [data-detail-photo="bad"] [data-photo-failed]');
+    const goodCount = photoCount(multi.photos[0].url);
+    if (!(await page.textContent('#view-detail [data-detail-photo="bad"]')).includes('写真2を読み込めなかった')) throw new Error('失敗番号なし');
+    await page.locator('#view-detail [data-detail-photo="bad"] [data-photo-reload]').click();
+    await page.waitForFunction(() => { const i = document.querySelector('#view-detail [data-detail-photo="bad"] img'); return i && i.complete && i.naturalWidth; });
+    if (photoCount(multi.photos[0].url) !== goodCount || photoCount(multi.photos[1].url) !== 3) throw new Error('個別再取得の要求数');
+    await page.screenshot({ path: path.join(__dirname, 'shot-10-photos-detail.png'), fullPage: true });
+  });
+
+  for (const recovery of ['写真再送', '編集', '上限で待機']) {
+    await check('部分成功の応答喪失→他者写真追加→同ID確認で他者の写真を保持: ' + recovery, async () => {
+      const name = '応答喪失他者追加-' + recovery;
+      await page.click('[data-nav="new"]'); await page.fill('#f-name', name);
+      await page.setInputFiles('#f-photo-album', [generatedPhoto, generatedPhoto]); await waitPhotos(2);
+      await page.getByRole('button', { name: '写真2を代表にする', exact: true }).click();
+      photoFailAt = 2; apiLose.createItem = Infinity;
+      try {
+        await page.click('#item-form button[type=submit]');
+        await errorToastMatching('保存できたか確認できませんでした');
+        await page.waitForSelector('#view-form:not(.hidden) #photo-slot img');
+      } finally { photoFailAt = 0; delete apiLose.createItem; }
+      const it = items.find(i => i.name === name);
+      if (!it || it.photos.length !== 1) throw new Error('部分成功になっていない');
+      const other = Array.from({ length: recovery === '上限で待機' ? 3 : 1 }, (_, i) => ({
+        id: 'other-' + ['写真再送', '編集', '上限で待機'].indexOf(recovery) + '-' + i,
+        url: 'https://lh3.googleusercontent.com/d/other-' + Date.now() + '-' + i
+      }));
+      it.photos = it.photos.concat(other); it.photo_url = other.at(-1).url;
+      await page.click('#item-form button[type=submit]');
+      await page.waitForSelector('#view-detail:not(.hidden) #btn-photo-retry');
+      const before = opCalls.filter(c => c.action === 'updateItem').length;
+      await page.click(recovery === '編集' ? '#btn-edit' : '#btn-photo-retry');
+      await page.waitForFunction(() => !document.querySelector('#view-form').classList.contains('hidden') || !document.querySelector('#saving-indicator'));
+      if (opCalls.filter(c => c.action === 'updateItem').length !== before) throw new Error('他者変更を再確認せず再送して写真を取り外した');
+      await page.waitForSelector('#view-form:not(.hidden) #conflict-notice', { timeout: 5000 });
+      for (const p of other) if (!(await page.locator('[data-form-photo="' + p.id + '"]').count())) throw new Error('他者の写真が下書きに無い');
+      if (!(await page.textContent('#conflict-notice')).includes('代表')) throw new Error('代表/取り外しの再確認案内なし');
+      if (recovery === '上限で待機') {
+        if (!(await page.textContent('#photo-slot')).includes('待機中')) throw new Error('失敗下書きの待機なし');
+        await page.getByRole('button', { name: '写真1を外す', exact: true }).click();
+        await page.getByRole('button', { name: '追加する', exact: true }).click();
+      }
+      const n = recovery === '上限で待機' ? 4 : 3;
+      await page.getByRole('button', { name: '写真' + n + 'を代表にする', exact: true }).click();
+      await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+      for (const p of other) if (!it.photos.some(x => x.id === p.id)) throw new Error('保存後に他者写真が消えた');
+      if (it.photos.length !== n || it.photo_url !== it.photos.at(-1).url) throw new Error('回復後の枚数/代表');
+    });
+  }
+
+
+  await check('検索・絞り込み・備品ID入力に読み上げ名がある', async () => {
+    await page.click('[data-nav="list"]');
+    for (const [role, name] of [['searchbox', '備品を検索'], ['combobox', '在庫で絞り込む'], ['combobox', 'カテゴリで絞り込む'], ['combobox', '場所で絞り込む']]) {
+      if (await page.getByRole(role, { name, exact: true }).count() !== 1) throw new Error('入力名なし: ' + name);
+    }
+    await page.click('[data-nav="scan"]');
+    if (await page.getByLabel('読み取れないときは備品IDを直接入力', { exact: true }).count() !== 1) throw new Error('備品IDのラベルなし');
+    await page.click('[data-nav="list"]');
+  });
+
+  await check('保存の通信期限後も下書きと操作IDを保ち、同じ操作で結果を確認する', async () => {
+    await page.click('[data-nav="new"]'); await page.fill('#f-name', '期限切れ登録');
+    const from = opCalls.length;
+    apiDelay.createItem = 2000;
+    await page.evaluate(() => { window.APP_CONFIG.API_WRITE_TIMEOUT_MS = 100; });
+    try {
+      await page.click('#item-form button[type=submit]');
+      await errorToastMatching('確認できませんでした');
+      await page.waitForSelector('#view-form:not(.hidden) #f-name');
+      if (await page.inputValue('#f-name') !== '期限切れ登録') throw new Error('期限後の下書きが消えた');
+    } finally {
+      delete apiDelay.createItem;
+      await page.evaluate(() => { delete window.APP_CONFIG.API_WRITE_TIMEOUT_MS; });
+    }
+    await page.click('#item-form button[type=submit]');
+    await page.waitForSelector('#saving-indicator', { state: 'detached', timeout: 5000 });
+    const sent = opsOf('createItem', from);
+    if (new Set(sent.map(c => c.op_id)).size !== 1 || [...new Set(sent.map(c => c.op_attempt))].join(',') !== '1,2,3,4') throw new Error('期限後の同ID確認: ' + JSON.stringify(sent));
+    if (countByName('期限切れ登録') !== 1) throw new Error('期限後に二重登録');
   });
 
   await check('JS エラーが出ていない', async () => {
