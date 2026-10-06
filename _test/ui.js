@@ -1344,6 +1344,99 @@ const server = http.createServer((req, res) => {
 
   // PHOTO.md 項目5: 全置換APIを使う複数写真の操作と失敗回復。
   const waitPhotos = async n => page.waitForFunction(n => document.querySelectorAll('#photo-slot [data-form-photo]').length === n && document.querySelector('#loading').classList.contains('hidden'), n);
+  // スマホ写真: 実際の横スワイプ、画面幅、キーボード操作を確認する。
+  await check('スマホ写真の横スクロールは追加・詳細・編集で使え、操作後も対象を見失わない', async () => {
+    const stripFits = async (selector, horizontal) => {
+      const layout = await page.locator(selector).evaluate(el => {
+        const cards = Array.from(el.children).map(c => c.getBoundingClientRect());
+        return { width: el.clientWidth, overflow: el.scrollWidth - el.clientWidth,
+          ys: cards.map(c => c.top), bodyOverflow: document.documentElement.scrollWidth - innerWidth };
+      });
+      if (layout.bodyOverflow > 1) throw new Error('画面全体が横にはみ出す: ' + JSON.stringify(layout));
+      if (horizontal ? layout.overflow < 20 || Math.max(...layout.ys) - Math.min(...layout.ys) > 1 : layout.overflow > 1)
+        throw new Error('写真の並び: ' + JSON.stringify(layout));
+    };
+    const swipe = async selector => {
+      const strip = page.locator(selector);
+      await page.waitForFunction(() => !document.querySelector('#toast-area .toast'));
+      await strip.evaluate(el => { el.scrollLeft = 0; });
+      await strip.scrollIntoViewIfNeeded();
+      const box = await strip.boundingBox();
+      const x = box.x + box.width - 25, y = box.y + 80;
+      const cdp = await ctx.newCDPSession(page);
+      try {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+        for (let i = 1; i <= 8; i++) {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - i * 28, y }] });
+          await page.waitForTimeout(20);
+        }
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        await page.waitForTimeout(450);
+      } finally { await cdp.detach(); }
+      const final = await strip.evaluate(el => el.scrollLeft);
+      if (final < 50) {
+        await page.screenshot({ path: path.join(__dirname, 'shot-scroll-failure.png'), fullPage: true });
+        throw new Error('スワイプで移動しない: ' + JSON.stringify({selector,box,final}));
+      }
+    };
+    const focusedCard = async () => page.evaluate(() => {
+      const el = document.activeElement, card = el.closest('[data-form-photo]');
+      if (!card) return null;
+      const a = el.getBoundingClientRect(), b = document.querySelector('#photo-slot').getBoundingClientRect();
+      return { id: card.getAttribute('data-form-photo'), visible: a.left >= b.left - 1 && a.right <= b.right + 1 };
+    });
+    try {
+      await page.click('[data-nav="new"]'); await page.fill('#f-name', '横スクロール確認');
+      await stripFits('#photo-slot', false);
+      await page.setInputFiles('#f-photo-album', generatedPhoto); await waitPhotos(1);
+      await stripFits('#photo-slot', false);
+      if (await page.isVisible('#photo-scroll-hint')) throw new Error('1枚にスワイプ案内');
+      await page.setInputFiles('#f-photo-album', Array.from({ length: 3 }, (_, i) => ({ ...generatedPhoto, name: 'swipe' + i + '.png' })));
+      await waitPhotos(4);
+      for (const width of [320, 390, 430, 768]) {
+        await page.setViewportSize({ width, height: 844 });
+        await stripFits('#photo-slot', width < 640);
+        if (await page.isVisible('#photo-scroll-hint') !== (width < 640)) throw new Error('スワイプ案内の幅');
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+      await swipe('#photo-slot');
+      const fourth = await page.locator('#photo-slot [data-form-photo]').nth(3).getAttribute('data-form-photo');
+      await page.getByRole('button', { name: '写真4を代表にする', exact: true }).focus();
+      await page.keyboard.press('Enter');
+      let focus = await focusedCard();
+      if (!focus || focus.id !== fourth || !focus.visible) throw new Error('代表後のフォーカス: ' + JSON.stringify(focus));
+      await page.screenshot({ path: path.join(__dirname, 'shot-13-photo-scroll-form.png'), fullPage: true });
+      await page.getByRole('button', { name: '写真4を外す', exact: true }).focus();
+      await page.keyboard.press('Enter'); await waitPhotos(3);
+      const third = await page.locator('#photo-slot [data-form-photo]').nth(2).getAttribute('data-form-photo');
+      focus = await focusedCard();
+      if (!focus || focus.id !== third || !focus.visible) throw new Error('取り外し後のフォーカス: ' + JSON.stringify(focus));
+      await page.setInputFiles('#f-photo-album', generatedPhoto); await waitPhotos(4);
+      await page.click('#item-form button[type=submit]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+      await page.getByRole('region', { name: '備品の写真', exact: true }).waitFor();
+      for (const width of [320, 390, 430, 768]) {
+        await page.setViewportSize({ width, height: 844 });
+        await stripFits('#detail-photos', width < 640);
+      }
+      await page.setViewportSize({ width: 390, height: 844 });
+      await swipe('#detail-photos');
+      await page.locator('#detail-photos').focus(); await page.keyboard.press('End');
+      await page.getByRole('button', { name: '写真4を拡大', exact: true }).focus();
+      await page.keyboard.press('Enter'); await page.getByRole('dialog').waitFor();
+      await page.keyboard.press('Escape'); await page.waitForSelector('dialog', { state: 'detached' });
+      if (!(await page.getByRole('button', { name: '写真4を拡大', exact: true }).evaluate(el => el === document.activeElement))) throw new Error('拡大から写真4へ戻らない');
+      await page.screenshot({ path: path.join(__dirname, 'shot-14-photo-scroll-detail.png'), fullPage: true });
+      const before = await page.locator('#detail-photos').evaluate(el => el.scrollLeft);
+      await page.click('[data-set-status="在庫なし"]'); await page.waitForSelector('#saving-indicator', { state: 'detached' });
+      const after = await page.locator('#detail-photos').evaluate(el => el.scrollLeft);
+      if (Math.abs(before - after) > 3) throw new Error('同じ備品の再描画で横位置が戻る');
+      await page.click('#btn-edit'); await stripFits('#photo-slot', true);
+      await page.getByRole('region', { name: '追加・編集中の写真', exact: true }).focus();
+      await page.keyboard.press('Tab');
+      if (!(await focusedCard())) throw new Error('写真領域からTabで操作へ移れない');
+      await page.click('[data-nav="list"]');
+    } finally { await page.setViewportSize({ width: 390, height: 844 }); }
+  });
   let multi;
   await check('複数選択・上限・代表・取り外し・取消をモバイルで保存する', async () => {
     await page.click('[data-nav="new"]'); await page.fill('#f-name', '複数写真');

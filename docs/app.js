@@ -906,6 +906,8 @@
     var pending = !!(opts && opts.pending);
     var dis = pending ? ' disabled' : '';
     var photos = itemPhotos(item);
+    var previousPhotos = $('#detail-photos');
+    var photoScroll = previousPhotos && previousPhotos.getAttribute('data-photo-item') === item.item_id ? previousPhotos.scrollLeft : 0;
     var photo = photos.length ? photos.map(function (p, i) {
       return '<figure data-detail-photo="' + esc(p.id) + '" class="bg-white">' + detailImage(p, item.name, i) +
         '<figcaption class="flex items-center justify-between px-4 py-2 text-sm">写真' + (i + 1) +
@@ -950,7 +952,8 @@
 
     $('#view-detail').innerHTML = '' +
       '<div id="sync-detail" class="flex items-center gap-2 px-4 py-2 text-xs bg-slate-100 border-b border-slate-200 empty:hidden"></div>' +
-      '<div class="bg-white">' + photo + '</div>' +
+      '<div id="detail-photos" data-photo-item="' + esc(item.item_id) + '" class="bg-white photo-strip' + (photos.length > 1 ? ' photo-strip--multiple' : '') + '" role="region" aria-label="備品の写真"' + (photos.length > 1 ? ' tabindex="0"' : '') + '>' + photo + '</div>' +
+      (photos.length > 1 ? '<p class="photo-scroll-hint px-4 py-2 text-xs text-slate-500">左右にスワイプして写真を見られます</p>' : '') +
       '<div class="p-4 space-y-4">' +
       '  <div>' +
       '    <span class="badge ' + statusClass(item.stock_status) + '">' + esc(item.stock_status || '未設定') + '</span>' +
@@ -978,6 +981,7 @@
       '    <button id="btn-delete" class="h-12 rounded-xl bg-white border border-rose-300 text-rose-600 font-semibold active:bg-rose-50 disabled:opacity-50"' + dis + '>削除</button>' +
       '  </div>' +
       '</div>';
+    $('#detail-photos').scrollLeft = photoScroll;
   }
 
   /**
@@ -1258,7 +1262,8 @@
            conflictNotice(draft && draft.conflict) +
       '  <div class="bg-white rounded-2xl p-4 shadow-sm space-y-3">' +
       '    <span class="field-label">写真</span>' +
-      '    <div id="photo-slot" class="space-y-3"></div>' +
+      '    <div id="photo-slot" class="photo-strip space-y-3" role="region" aria-label="追加・編集中の写真"></div>' +
+      '    <p id="photo-scroll-hint" class="photo-scroll-hint text-xs text-slate-500 hidden">左右にスワイプして写真を見られます</p>' +
       '    <p id="photo-limit" aria-live="polite" class="text-sm text-slate-600"></p>' +
       '    <p id="photo-error" role="alert" class="text-sm text-rose-700"></p>' +
       '    <input id="f-photo" type="file" accept="image/*" capture="environment" aria-label="撮影する" class="hidden">' +
@@ -1626,9 +1631,16 @@
         '<button type="button" data-photo-primary="' + esc(p.id) + '" aria-label="' + label + 'を代表にする" aria-pressed="' + (draft.primary === p.id) + '" class="h-11 rounded-lg bg-slate-100">' + (draft.primary === p.id ? '代表' : '代表にする') + '</button>') +
         '<button type="button" data-photo-remove="' + esc(p.id) + '" aria-label="' + label + 'を外す" class="h-11 rounded-lg border border-slate-300">外す</button></div></figcaption></figure>';
     }
-    $('#photo-slot').innerHTML = (draft.photos.length ? draft.photos.map(function (p, i) { return card(p, i, false); }).join('') :
+    var slot = $('#photo-slot');
+    var scrollLeft = slot.scrollLeft;
+    var multiple = draft.photos.length + draft.waiting.length > 1;
+    slot.classList.toggle('photo-strip--multiple', multiple);
+    if (multiple) slot.setAttribute('tabindex', '0'); else slot.removeAttribute('tabindex');
+    $('#photo-scroll-hint').classList.toggle('hidden', !multiple);
+    slot.innerHTML = (draft.photos.length ? draft.photos.map(function (p, i) { return card(p, i, false); }).join('') :
       '<div class="h-32 rounded-xl bg-slate-100 flex items-center justify-center text-slate-500">写真なし</div>') +
       draft.waiting.map(function (p, i) { return card(p, i, true); }).join('');
+    slot.scrollLeft = scrollLeft;
     var full = draft.photos.length >= (CFG.MAX_PHOTOS || 4);
     $('#photo-limit').textContent = full ? '写真は4枚までです。追加するには写真を外してください' :
       '写真は4枚までです。あと' + ((CFG.MAX_PHOTOS || 4) - draft.photos.length) + '枚追加できます' +
@@ -1641,6 +1653,8 @@
     if (!btn || !state.photoDraft) return;
     var d = state.photoDraft;
     var id = btn.getAttribute('data-photo-remove') || btn.getAttribute('data-photo-primary') || btn.getAttribute('data-photo-add');
+    var oldCards = $$('[data-form-photo]', $('#photo-slot'));
+    var oldIndex = oldCards.indexOf(btn.closest('[data-form-photo]'));
     if (btn.hasAttribute('data-photo-remove')) {
       d.photos = d.photos.filter(function (p) { return p.id !== id; });
       d.waiting = d.waiting.filter(function (p) { return p.id !== id; });
@@ -1652,7 +1666,9 @@
       if (!d.primary) d.primary = id;
     }
     renderFormPhotos();
-    var focus = $('#photo-slot button') || $('#btn-photo-album');
+    var cards = $$('[data-form-photo]', $('#photo-slot'));
+    var card = cards.filter(function (f) { return f.getAttribute('data-form-photo') === id; })[0] || cards[Math.min(oldIndex, cards.length - 1)];
+    var focus = card ? $('button:not(:disabled)', card) : $('#btn-photo-album');
     focus.focus();
   }
 

@@ -159,3 +159,30 @@ input, select, textarea, button {
   font-weight: 600;
 }
 #qr-reader__dashboard_section_swaplink { color: #0f172a; }
+
+
+/* PHOTO.md 項目12: スマホの複数写真だけを横へ送る。ページ全体は広げない。 */
+.photo-strip { max-width: 100%; }
+.photo-strip:focus-visible { outline: 2px solid #0f172a; outline-offset: -2px; }
+.photo-scroll-hint { display: none; }
+@media (max-width: 639px) {
+  .photo-strip--multiple {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    padding: 4px;
+  }
+  .photo-strip--multiple > * {
+    flex: 0 0 86%;
+    min-width: 0;
+    scroll-snap-align: start;
+  }
+  .photo-strip.photo-strip--multiple > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  .photo-scroll-hint:not(.hidden) { display: block; }
+}
