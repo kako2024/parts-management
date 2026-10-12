@@ -16,6 +16,7 @@
    * 状態
    * ==============================================================*/
   var state = {
+    guest: false,         // 紹介用リンク（?guest=）でログインを省略しているか
     idToken: null,        // メモリ内のみに保持する（localStorage には置かない）
     cacheEmail: null,     // キャッシュの持ち主の照合に使うメール（ID トークンから取り出す。認証省略時は null）
     session: 0,           // ログイン・ログアウトのたびに増やす。古いセッションの API 応答を捨てるため
@@ -247,9 +248,21 @@
 
   function handleAuthExpired(message) {
     startSession();
+    var wasGuest = state.guest;
     state.idToken = null;
     state.user = null;
+    if (wasGuest) {
+      leaveGuest();
+      message = '紹介用のリンクは無効になりました。Google でログインしてください。';
+    }
     showLogin(message || 'ログインの有効期限が切れました。もう一度ログインしてください。');
+  }
+
+  // 紹介用リンクの利用をやめ、Google ログインに戻す（boot で初期化していないので、ここで呼ぶ）。
+  function leaveGuest() {
+    state.guest = false;
+    try { localStorage.removeItem('guest:token'); } catch (e) {}
+    initGoogleSignIn();
   }
 
   /* ================================================================
@@ -455,12 +468,14 @@
   function logout() {
     startSession();
     try { google.accounts.id.disableAutoSelect(); } catch (e) {}
+    var wasGuest = state.guest;
     state.idToken = null;
     state.user = null;
     state.cacheEmail = null;
     state.items = [];
     ItemCache.clear();
     closeUserSheet();
+    if (wasGuest) leaveGuest();
     showLogin('ログアウトしました。');
   }
 
@@ -2085,6 +2100,23 @@
     return problems;
   }
 
+  // 紹介用リンク（?guest=トークン）。トークンは localStorage に保存し、URL からは消す。
+  function readGuestToken() {
+    try {
+      var p = new URLSearchParams(location.search);
+      var t = p.get('guest');
+      if (t) {
+        localStorage.setItem('guest:token', t);
+        p.delete('guest');
+        var q = p.toString();
+        history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+      }
+      return localStorage.getItem('guest:token') || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function boot() {
     PERF.begin('A 起動→一覧', 0); // ナビゲーション開始時点から計る
     bindEvents();
@@ -2103,6 +2135,10 @@
 
     // 計測用の認証省略（?perf=1 かつトークンが置かれているときだけ。PERF.md 1.5）
     var bypass = PERF.bypassToken();
+    if (!bypass) {
+      bypass = readGuestToken();
+      if (bypass) state.guest = true;
+    }
     if (bypass) {
       PERF.mark('A 起動→一覧', 'credential(bypass)');
       startSession();
