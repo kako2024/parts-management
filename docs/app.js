@@ -2,7 +2,27 @@
  * app.js — 備品管理 SPA
  * ------------------------------------------------------------------
  * 画面遷移・API 通信・Google ログインをすべてここで扱う。
- * 依存: config.js / Tailwind CDN / Google Identity Services / html5-qrcode
+ * 依存: config.js / cache.js / perf.js / Tailwind CDN / Google Identity Services / html5-qrcode
+ *
+ * 目次（上から順。「/* ====」の見出しで探す。「-- 」は見出しの中の小見出し「/* ----」）
+ *   状態              画面全体の状態 state（ログイン・表示中の備品・写真の下書き・情報の新しさ）
+ *   小道具            DOM の取り出し・エスケープ・トースト・比較などの共通処理
+ *   API               GAS への通信 api()（読取と保存の期限、認証切れの扱い）
+ *     -- 更新操作の送信  操作 ID を付けた保存 sendOp()、ログインの区切り startSession()、認証切れ・ゲスト解除
+ *   認証              Google ログインの初期化と ID トークンの読み取り
+ *     -- 端末内キャッシュ  一覧・詳細の保存と表示（本体は cache.js）、ログイン後の起動 afterLogin()・ログアウト
+ *   情報の新しさと通信状態  一覧・詳細の上の「最新の情報です」などの表示
+ *   画面遷移          goto() と戻るボタンの履歴
+ *   一覧              一覧の取得 loadItems()
+ *     -- 写真の大きさ    Drive の写真を表示サイズで取る URL、一覧の描画 renderList()・絞り込みの選択肢
+ *   詳細              詳細の取得と描画、写真だけの送り直し、履歴の表示
+ *     -- 更新の即時反映  在庫ステータスの更新・削除と、保存を待たずに出す仮の表示・成功・競合のときの描き直し
+ *   登録 / 編集フォーム  フォームの表示、送信 submitForm()、競合・操作 ID 不一致の扱い
+ *     -- 写真          写真の下書き（追加・外す・代表）、詳細の写真と拡大表示、縮小
+ *   QR スキャン        カメラでの読み取りと該当備品への移動
+ *   アカウントシート    利用者のメニュー（シート）の開閉
+ *   イベント配線        写真の読み込み失敗の扱いと、ボタン・入力へのイベントの登録 bindEvents()
+ *   起動              設定の確認、紹介用リンク（?guest=）の読み取り、boot()
  * ------------------------------------------------------------------
  */
 (function () {
@@ -59,6 +79,9 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+
+  /** JSON にしたときに同じ値か（備品・履歴・写真の配列をまとめて比べる） */
+  function sameJson(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 
   function show(el) { el && el.classList.remove('hidden'); }
   function hide(el) { el && el.classList.add('hidden'); }
@@ -644,7 +667,7 @@
   /** 取得した一覧を state に入れて描画する */
   function showItems(items) {
     // 前回のデータで出した一覧と同じなら描き直さない（写真の読み込みをやり直させないため）
-    var same = listRenderedOnce && JSON.stringify(items) === JSON.stringify(state.items);
+    var same = listRenderedOnce && sameJson(items, state.items);
     state.items = items;
     if (!same) renderList();
     if (!listRenderedOnce) {
@@ -890,7 +913,7 @@
         setDetailFresh(itemId, { status: 'fresh', confirmedAt: Date.now() });
         if (!stillShowing(rev)) return;
         // 手元の表示と同じなら描き直さない（写真の読み込みをやり直させないため）
-        if (JSON.stringify([data.item, data.logs || []]) === JSON.stringify([state.currentItem, state.currentLogs])) return;
+        if (sameJson([data.item, data.logs || []], [state.currentItem, state.currentLogs])) return;
         showDetail(data.item, data.logs || []);
       })
       .catch(function (err) {
@@ -1392,7 +1415,7 @@
     if (stillShowing(rev)) {
       showDetail(latest, null);
       var photo = draft.photo;
-      if (JSON.stringify([itemPhotos(base), base.photo_url]) !== JSON.stringify([itemPhotos(latest), latest.photo_url])) {
+      if (!sameJson([itemPhotos(base), base.photo_url], [itemPhotos(latest), latest.photo_url])) {
         photo = mergePhotoDraft(latest, draft.photo);
         conflict.push({ key: 'photos', theirs: '最新の写真', mine: '追加した写真の下書き。外す操作と代表は再確認してください' });
       }
@@ -1435,7 +1458,8 @@
       EDIT_FIELDS.forEach(function (k) {
         if (!base || fieldText(k, payload[k]) !== fieldText(k, base[k])) send[k] = payload[k];
       });
-      if (JSON.stringify([payload.photos, payload.primary_photo_id]) !== JSON.stringify([photoPayload(itemPhotos(base)), initialPhotoDraft(base).primary])) {
+      var basePhotoState = [photoPayload(itemPhotos(base)), initialPhotoDraft(base).primary]; // 開いたときの写真と代表
+      if (!sameJson([payload.photos, payload.primary_photo_id], basePhotoState)) {
         send.photos = payload.photos; send.primary_photo_id = payload.primary_photo_id;
       }
       if (Object.keys(send).length === 2) {
@@ -1468,13 +1492,13 @@
     // 保存を待たずに、入力どおりの詳細を出す（楽観的更新。PERF.md 項目 6）
     var prev = isEdit ? state.currentItem : null;
     var prevLogs = isEdit ? state.currentLogs : [];
+    var primaryPhoto = findPhoto(draft.photo.photos, draft.photo.primary) || {};
     if (isEdit) noteLocalWrite(itemId);
     var optimistic = Object.assign({}, prev || { item_id: payload.item_id || '（採番中）', is_deleted: false }, {
       name: payload.name, category: payload.category, location: payload.location,
       stock_status: payload.stock_status, quantity: payload.quantity, note: payload.note, spec: payload.spec,
       photos: draft.photo.photos.map(function (p) { return { id: p.id, url: p.previewUrl || p.url }; }),
-      photo_url: (draft.photo.photos.filter(function (p) { return p.id === draft.photo.primary; })[0] || {}).previewUrl ||
-        (draft.photo.photos.filter(function (p) { return p.id === draft.photo.primary; })[0] || {}).url || '',
+      photo_url: primaryPhoto.previewUrl || primaryPhoto.url || '',
       updated_at: '（保存中）', updated_by: state.user ? state.user.email : ''
     });
     state.saving = true;
@@ -1544,8 +1568,8 @@
     var expected = draft.photos.filter(function (p) {
       return failedIds.length ? failedIds.indexOf(p.id) === -1 : !failed.some(function (x) { return x.id === p.id; });
     });
-    var expectedPrimary = (expected.filter(function (p) { return p.id === draft.primary; })[0] || expected[0] || {}).id || '';
-    var changed = JSON.stringify(saved.map(function (p) { return p.id; })) !== JSON.stringify(expected.map(function (p) { return p.id; })) ||
+    var expectedPrimary = (findPhoto(expected, draft.primary) || expected[0] || {}).id || '';
+    var changed = !sameJson(saved.map(function (p) { return p.id; }), expected.map(function (p) { return p.id; })) ||
       initialPhotoDraft(item).primary !== expectedPrimary || expected.some(function (p) {
         return p.url && !saved.some(function (x) { return x.id === p.id && x.url === p.url; });
       });
@@ -1611,6 +1635,11 @@
     var hash = 2166136261;
     for (var i = 0; i < url.length; i++) { hash ^= url.charCodeAt(i); hash = Math.imul(hash, 16777619); }
     return 'legacy-' + (hash >>> 0).toString(16);
+  }
+
+  /** 写真の配列から id の写真を探す（無ければ undefined） */
+  function findPhoto(photos, id) {
+    return photos.find(function (p) { return p.id === id; });
   }
 
   function itemPhotos(item) {
