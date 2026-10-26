@@ -105,6 +105,20 @@ function onFormPhotoAction(ev) {
   var card = cards.filter(function (f) { return f.getAttribute('data-form-photo') === id; })[0] || cards[Math.min(oldIndex, cards.length - 1)];
   var focus = card ? $('button:not(:disabled)', card) : $('#btn-photo-album');
   focus.focus();
+  revealPhotoCard(card);
+}
+
+/**
+ * 横並びの写真の帯で、操作したカードが帯の外に一部はみ出していたら、カードの左端（吸着位置）まで帯を動かす。
+ * focus() は一部でも見えている要素ではスクロールしないため、はみ出したままになることがある。
+ */
+function revealPhotoCard(card) {
+  var slot = $('#photo-slot');
+  if (!card || !slot.classList.contains('photo-strip--multiple')) return;
+  var c = card.getBoundingClientRect();
+  var s = slot.getBoundingClientRect();
+  if (c.left >= s.left && c.right <= s.right) return;
+  slot.scrollLeft += c.left - s.left - (parseFloat(getComputedStyle(slot).paddingLeft) || 0);
 }
 
 async function onPhotoSelected(ev) {

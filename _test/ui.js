@@ -1371,7 +1371,12 @@ const server = http.createServer((req, res) => {
           await page.waitForTimeout(20);
         }
         await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-        await page.waitForTimeout(450);
+        // スワイプ後の吸着が止まるまで待つ（動いている間に操作すると、吸着の続きが操作後の位置を上書きする）
+        await strip.evaluate(el => new Promise(resolve => {
+          let last = el.scrollLeft, still = 0;
+          const tick = () => { still = el.scrollLeft === last ? still + 1 : 0; last = el.scrollLeft; still >= 10 ? resolve() : requestAnimationFrame(tick); };
+          requestAnimationFrame(tick);
+        }));
       } finally { await cdp.detach(); }
       const final = await strip.evaluate(el => el.scrollLeft);
       if (final < 50) {
@@ -1400,11 +1405,26 @@ const server = http.createServer((req, res) => {
       }
       await page.setViewportSize({ width: 390, height: 844 });
       await swipe('#photo-slot');
-      const fourth = await page.locator('#photo-slot [data-form-photo]').nth(3).getAttribute('data-form-photo');
+      // スワイプの止まる位置はブラウザの版で変わる。3枚目の吸着位置にそろえ、4枚目が一部だけ見える状態で操作する
+      // （一部でも見えている要素には focus() がスクロールしないので、アプリが帯を動かさないと見失う）
+      await page.locator('#photo-slot').evaluate(el => new Promise(resolve => {
+        el.scrollLeft += el.children[2].getBoundingClientRect().left - el.getBoundingClientRect().left - parseFloat(getComputedStyle(el).paddingLeft);
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }));
+      const partial = await page.locator('#photo-slot').evaluate(el => {
+        const a = el.children[3].getBoundingClientRect(), b = el.getBoundingClientRect();
+        return a.left < b.right && a.right > b.right;
+      });
+      if (!partial) throw new Error('4枚目が一部だけ見える状態を作れない');
+      const fourth =await page.locator('#photo-slot [data-form-photo]').nth(3).getAttribute('data-form-photo');
       await page.getByRole('button', { name: '写真4を代表にする', exact: true }).focus();
       await page.keyboard.press('Enter');
       let focus = await focusedCard();
       if (!focus || focus.id !== fourth || !focus.visible) throw new Error('代表後のフォーカス: ' + JSON.stringify(focus));
+      // 作り直した帯は吸着で位置が戻ることがあるので、落ち着いた後も見えているかを確かめる
+      await page.waitForTimeout(600);
+      focus = await focusedCard();
+      if (!focus || focus.id !== fourth || !focus.visible) throw new Error('代表の少し後のフォーカス: ' + JSON.stringify(focus));
       await page.screenshot({ path: path.join(__dirname, 'shot-13-photo-scroll-form.png'), fullPage: true });
       await page.getByRole('button', { name: '写真4を外す', exact: true }).focus();
       await page.keyboard.press('Enter'); await waitPhotos(3);
