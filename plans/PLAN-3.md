@@ -30,7 +30,7 @@
 - 写真の入力は `docs/app.js` のフォーム（`openForm`）にあり，`<input type="file" accept="image/*" capture="environment">` が 1 つだけある．スマホでは `capture` があるとカメラが直接開き，アルバムの写真を選べない．これが「事前に撮った写真を追加できない」直接の原因とみている（項目 1 で確かめる）．
 - 今の写真は 1 備品 1 枚で，`items` シートの `photo_url` 列に URL を 1 つ持つ．API（`createItem`・`updateItem`）も写真を 1 枚だけ受け取る．「写真だけ送り直す」（`RELIABILITY.md` 1）も 1 枚を前提にしている．
 - 選んだ写真は画面で長辺 1280px の JPEG に縮めてから送る（`compressImage`，`docs/config.js` の `PHOTO_MAX_EDGE`・`PHOTO_QUALITY`）．GAS 側の 1 枚の上限は 6MB（`gas/Config.gs` の `MAX_PHOTO_BYTES`）である．
-- 以前の `PLAN.md`（ページロードの高速化）は `PLAN.md.bak-20261006-150416` と git の履歴に残っている．その記録は `PERF.md`，計画 2 の記録は `RELIABILITY.md` にある．どちらの計画も完了しており，本計画に引き継ぐ未完の項目は無い．`RELIABILITY.md` 6.5 の「`docs/` の公開」は本番への反映にあたるので，本計画では扱わない（項目 8 の一覧には載せる）．
+- 以前の `PLAN.md`（ページロードの高速化）は `PLAN-1.md` と git の履歴に残っている．その記録は `PERF.md`，計画 2 の記録は `RELIABILITY.md` にある．どちらの計画も完了しており，本計画に引き継ぐ未完の項目は無い．`RELIABILITY.md` 6.5 の「`docs/` の公開」は本番への反映にあたるので，本計画では扱わない（項目 8 の一覧には載せる）．
 - 本計画の結果は，リポジトリ直下の `PHOTO.md`（新規）に記録する．コードのコメントから参照するときは，既存の書き方（「`PERF.md` 項目 7」「PLAN-2 項目 1」）にならい「`PHOTO.md` 項目 N」と書く．
 - 本計画は調査・実装を含まない．具体的な方式は，各項目の最初（主に項目 1）に調べて決める．
 

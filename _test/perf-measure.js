@@ -239,7 +239,7 @@ async function roundC(phase, k) {
   }
 }
 
-/** 基準値として認める最小の回数（PLAN.md 項目 1 の完了条件） */
+/** 基準値として認める最小の回数（plans/PLAN-1.md 項目 1 の完了条件） */
 const MIN_ROUNDS = 3;
 
 /**

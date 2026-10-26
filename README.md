@@ -7,6 +7,30 @@ QR コードを読み取って在庫ステータスをワンタップで更新�
 
 ---
 
+## 読む順番
+
+| 目的 | 読むところ |
+|---|---|
+| アプリを使う | 下の「使う人へ」 |
+| コードを直す | 下の「開発に加わる人へ」、そのあと「構成」「API 仕様」 |
+| 別の環境を一から作る | [SETUP.md](SETUP.md) を上から順に |
+
+### 使う人へ
+
+- アプリは https://kako2024.github.io/parts-management/ です。スマートフォンのブラウザで開き、Google アカウントでログインします。
+- 使えるのは、管理者が決めた利用者用の Google グループに入っているアカウントだけです（グループのアドレスは管理者に聞いてください）。管理者はこのリポジトリの所有者 kako2024 です。「利用する権限がありません」と出たら、グループへの追加を頼んでください。
+- 備品に貼った QR は、アプリのスキャン画面で読み取ると該当備品の詳細が開きます。アプリの URL 入りで印刷した QR なら、標準カメラで読んでも開きます。
+
+### 開発に加わる人へ
+
+- `docs/`（画面）は、`main` に push すると、数十秒〜数分で上の URL の画面（GitHub Pages）に出ます。ビルドはありません。利用者の画面にそのまま出るので、ブランチを切って PR にし、差分を確かめてから `main` に入れてください。
+- `gas/`（API）は push しただけでは反映されません。GAS プロジェクトへの反映と再デプロイが要ります（[SETUP.md](SETUP.md)「更新の反映方法」）。GAS プロジェクトの編集権限は、上と同じ管理者からもらってください。
+- `gas/` を変えたら、反映の前に `node _test/harness.js` を流します（依存パッケージなし）。画面のテストは [_test/README.md](_test/README.md) にあります。
+- スプレッドシート ID・グループアドレス・Drive フォルダ ID はスクリプトプロパティに置いてあり、リポジトリには入れません。このリポジトリは公開されているので、ほかの公開してはいけない値（トークン・パスワードなど）もコミットしないでください。
+- `logs` シートの行と `items` シートの `op_ids` 列は、並べ替え・別シートへの移動・削除をしないでください。どちらにも過去の保存の操作 ID が残っていて、通信が切れて同じ保存が送り直されたときに二重に実行しないための判定に使っています。触ると備品や履歴が二重に登録されることがあります（下の「運用上の目安」）。
+
+---
+
 ## できること
 
 - Google アカウントでログイン。**指定した Google グループのメンバーだけ**が利用可能
@@ -28,7 +52,9 @@ parts-management/
 ├── README.md            この文書
 ├── SETUP.md             セットアップ手順（最初に読む）
 ├── PERF.md              表示の高速化の計測手順・計測値・施策の記録
+├── RELIABILITY.md       保存の確実さ（送り直し・競合検出など）の方式と検証の記録
 ├── PHOTO.md             複数写真の方式・確認結果・残る制約
+├── plans/               これまでの実行計画（PLAN-1 高速化、PLAN-2 保存の確実さ、PLAN-3 写真）。コメントの「PLAN-2 項目 1」などはここを指す
 ├── perf-results/        計測の生データ（PERF.md から参照。配信対象外）
 ├── _test/               ローカル検証用のテストハーネスと計測スクリプト（配信対象外）
 ├── docs/                GitHub Pages で公開するディレクトリ（ルート直下に置くこと）
@@ -75,6 +101,7 @@ parts-management/
 | `op_ids` | 文字列 | この備品の行に書き込んだ操作の ID（アプリが使う。送り直しの判定用。空白区切り。無ければ自動で足す） |
 | `photos` | JSON文字列 | 追加順の `[{"id":"…","url":"…"}]`（最大4枚）。空欄は旧 `photo_url` を1枚として読む。`[]` は写真なし |
 | `photo_ops` | JSON文字列 | 写真保存結果と未完了履歴の回復用の内部記録。手で変更・削除しない |
+| `spec` | 文字列 | 仕様（ネジ穴の種類・サイズなど。200 文字まで）。一覧で備品名の下に出し、キーワード検索の対象にもなる。シートにこの列が無ければ、最初の保存のときに末尾へ自動で足す |
 
 ### `logs` シート
 
@@ -123,9 +150,9 @@ GAS は常に HTTP 200 を返すため、成否は `ok`、種別は `error.statu
 | action | payload | 返すもの |
 |---|---|---|
 | `loginCheck` | `withItems?`, `filters?` | ユーザー情報、カテゴリ・場所の候補、在庫ステータスの選択肢。`withItems` なら `filters`（`getItems` と同じ絞り込み）をかけた `items[]`, `total` も返す |
-| `getItems` | `keyword?`, `category?`, `location?`, `stock_status?`, `restock?`（`true` なら残りわずか・在庫なしだけ） | `items[]`, `total` |
+| `getItems` | `keyword?`（備品 ID・備品名・カテゴリ・場所・備考・仕様から探す）, `category?`, `location?`, `stock_status?`, `restock?`（`true` なら残りわずか・在庫なしだけ） | `items[]`, `total` |
 | `getItem` | `item_id`, `withLogs?` | `item`, `logs[]` |
-| `createItem` | `name`, `category?`, `location?`, `stock_status?`, `quantity?`, `note?`, `item_id?`, `photos?`, `primary_photo_id?`, `photo?` | `item`, `log`。写真の一部失敗なら `photoErrors` と互換 `photoError` も |
+| `createItem` | `name`, `category?`, `location?`, `stock_status?`, `quantity?`, `note?`, `spec?`, `item_id?`, `photos?`, `primary_photo_id?`, `photo?` | `item`, `log`。写真の一部失敗なら `photoErrors` と互換 `photoError` も |
 | `updateStatus` | `item_id`, `stock_status`, `quantity?`, `note?` | `item`, `log` |
 | `updateItem` | `item_id` と更新したい項目 | `item`, `log` |
 | `deleteItem` | `item_id` | `item`（`is_deleted: true`）, `log` |

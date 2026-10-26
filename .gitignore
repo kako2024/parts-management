@@ -12,3 +12,10 @@ node_modules/
 
 # テストの出力
 _test/shot-*.png
+
+# 個人のエージェント設定
+.codex/
+
+# clasp pull で落ちてくる GAS 側だけのファイル（リポジトリに置かない）
+gas/GuestBypass.gs
+gas/GuestBypass.js
