@@ -2,10 +2,11 @@
 const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert/strict');
-const source = fs.readFileSync(require('path').join(__dirname, '../docs/app.js'), 'utf8');
-const apiSource = source.slice(source.indexOf('  function api('), source.indexOf('  /* ---------- 更新操作'));
-const sendSource = source.slice(source.indexOf('  function outcomeUnknown('), source.indexOf('  /**\n   * 新しいセッション'));
-const qrSource = source.slice(source.indexOf('  function extractItemId('), source.indexOf('  /* ================================================================\n   * アカウント'));
+const source = require('./app-source').all;
+const scanSource = require('./app-source').byFile['scan.js'];
+const apiSource = source.slice(source.indexOf('\nfunction api('), source.indexOf('\n/* ---------- 更新操作'));
+const sendSource = source.slice(source.indexOf('\nfunction outcomeUnknown('), source.indexOf('\n/**\n * 新しいセッション'));
+const qrSource = scanSource.slice(scanSource.indexOf('\nfunction extractItemId(')); // scan.js の末尾まで
 let failed = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const bounded = p => Promise.race([p, sleep(150).then(() => { throw new Error('通信期限で決着しない'); })]);

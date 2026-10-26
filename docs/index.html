@@ -160,6 +160,16 @@
 <script src="config.js"></script>
 <script src="perf.js"></script>
 <script src="cache.js"></script>
-<script src="app.js"></script>
+<!-- app/ は順に読み込む（関数をグローバルで共有する。app/core.js の冒頭を参照） -->
+<script src="app/core.js"></script>
+<script src="app/api.js"></script>
+<script src="app/auth.js"></script>
+<script src="app/sync.js"></script>
+<script src="app/list.js"></script>
+<script src="app/detail.js"></script>
+<script src="app/form.js"></script>
+<script src="app/photo.js"></script>
+<script src="app/scan.js"></script>
+<script src="app/main.js"></script>
 </body>
 </html>

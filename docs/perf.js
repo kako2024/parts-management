@@ -2,7 +2,7 @@
  * perf.js — 所要時間の計測（PERF.md の手順で使う）
  * ------------------------------------------------------------------
  * URL に ?perf=1 を付けて開くと有効になり、以後はこの端末で ?perf=0 を
- * 付けて開くまで有効のまま。無効時は何もしない（app.js からの呼び出しは素通り）。
+ * 付けて開くまで有効のまま。無効時は何もしない（app/ からの呼び出しは素通り）。
  *
  * 計測結果は localStorage の 'perf:log' に溜まり、画面左下の ⏱ ボタンから
  * 一覧・中央値の確認と Markdown でのコピーができる。
@@ -118,7 +118,7 @@
       var done = function (ok) {
         if (!ok) failed++;
         if (--left === 0) {
-          // 読み直しで表示できた枚数（app.js の onImageError。1 回目は失敗していた）
+          // 読み直しで表示できた枚数（app/main.js の onImageError。1 回目は失敗していた）
           var retried = imgs.filter(function (i) { return i.dataset.retry === '1' && i.naturalWidth > 0; }).length;
           end(key, imgs.length + '枚' + (interrupted ? '（中断 ' + interrupted + '）' : failed ? '（失敗 ' + failed + '）' : '') +
             (retried ? '（読み直し ' + retried + '）' : ''));
@@ -135,7 +135,7 @@
         done(ok);
       };
       var onLoad = function () { finish(true); };
-      // app.js が 1 回だけ読み直す（dataset.retry = '1'）。その結果まで待つ
+      // app/main.js が 1 回だけ読み直す（dataset.retry = '1'）。その結果まで待つ
       var onError = function () { if (img.dataset.retry !== '1') finish(false); };
       img.addEventListener('load', onLoad);
       img.addEventListener('error', onError);

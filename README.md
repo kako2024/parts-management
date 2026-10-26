@@ -60,7 +60,7 @@ parts-management/
 ├── docs/                GitHub Pages で公開するディレクトリ（ルート直下に置くこと）
 │   ├── index.html       画面の骨格
 │   ├── style.css        繰り返し使う部品のスタイル
-│   ├── app.js           画面遷移・API 通信・ログイン・スキャン
+│   ├── app/             画面の処理（index.html が順に読み込む。各ファイルの役割は app/core.js の冒頭）
 │   ├── cache.js         一覧・詳細データの端末内キャッシュ
 │   ├── perf.js          所要時間の計測（?perf=1 のときだけ動く）
 │   ├── config.js        GAS の URL とクライアント ID（環境ごとに書き換える）

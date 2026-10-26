@@ -14,7 +14,7 @@
  *   GAS の Web App は独自レスポンスヘッダを設定できないが、/exec は
  *   Access-Control-Allow-Origin: * を返す。ただしプリフライト(OPTIONS)には
  *   応答しないため、フロント側は Content-Type: text/plain を使い
- *   「単純リクエスト」に収めること（docs/app.js の api() 参照）。
+ *   「単純リクエスト」に収めること（docs/app/api.js の api() 参照）。
  * ------------------------------------------------------------------
  */
 

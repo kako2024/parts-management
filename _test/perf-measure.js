@@ -180,7 +180,7 @@ async function findIdsByName(name) {
   await page.click('[data-nav="list"]');
   await waitIdle();
   await page.fill('#search-input', name);
-  await sleep(800); // 入力から検索までの待ち（app.js は 350ms）
+  await sleep(800); // 入力から検索までの待ち（app/main.js は 350ms）
   await waitIdle();
   const ids = await page.$$eval('#item-list [data-item-id]', (cards, n) =>
     cards.filter(c => (c.querySelector('p.font-semibold') || {}).textContent === n).map(c => c.getAttribute('data-item-id')), name);

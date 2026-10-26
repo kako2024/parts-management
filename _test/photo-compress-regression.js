@@ -4,10 +4,12 @@ const vm = require('vm');
 const { execFileSync } = require('child_process');
 const assert = require('assert/strict');
 const oldSource = execFileSync('git', ['show', '1e5c47ecb1b3277463dc9145f5cd6f97e27d7fc5:docs/app.js'], { encoding: 'utf8' });
-const newSource = fs.readFileSync('docs/app.js', 'utf8');
+const newSource = require('./app-source').byFile['photo.js'];
 function extract(s) {
-  const start = s.indexOf('  function compressImage(file, maxEdge, quality) {');
-  const end = s.indexOf('  /* ================================================================', start);
+  // 旧版は app.js 1 ファイル（2 字下げ）で次の見出しまで、現行は app/photo.js（字下げなし）で末尾まで
+  const start = s.search(/^ *function compressImage\(file, maxEdge, quality\) \{/m);
+  const next = s.slice(start).search(/^ *\/\* ================================================================/m);
+  const end = next === -1 ? s.length : start + next;
   assert(start >= 0 && end > start); return s.slice(start, end);
 }
 async function run(source, failAt) {

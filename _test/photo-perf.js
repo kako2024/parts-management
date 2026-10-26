@@ -10,7 +10,9 @@ const ROOT = path.join(__dirname, '..');
 const BASE = '1e5c47ecb1b3277463dc9145f5cd6f97e27d7fc5';
 const FAST_4G = { offline: false, latency: 165, downloadThroughput: 9e6 / 8 * 0.9, uploadThroughput: 1.5e6 / 8 * 0.9 };
 const oldFiles = {};
-for (const name of fs.readdirSync(path.join(ROOT, 'docs')).filter(n => /\.(js|css|html)$/.test(n))) {
+// 旧版のファイルは旧版の一覧から取る（現行で消えた app.js も配信できるように）
+for (const name of execFileSync('git', ['ls-tree', '--name-only', BASE, 'docs/'], { encoding: 'utf8' }).split('\n')
+  .map(n => n.replace(/^docs\//, '')).filter(n => /\.(js|css|html)$/.test(n))) {
   oldFiles[name] = execFileSync('git', ['show', BASE + ':docs/' + name]);
 }
 const variants = ['old1', 'new1', 'new4'];
@@ -49,7 +51,7 @@ const server = https.createServer(tls, (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/javascript' });
     return res.end(`window.APP_CONFIG={GAS_API_URL:'${origin}/api',GOOGLE_CLIENT_ID:'mock.apps.googleusercontent.com',APP_NAME:'模擬',PHOTO_MAX_EDGE:1280,PHOTO_QUALITY:0.82,MAX_PHOTOS:4};`);
   }
-  if (!/^[\w.-]+$/.test(name) || !fs.existsSync(path.join(ROOT, 'docs', name))) { res.writeHead(404); return res.end(); }
+  if (!/^(app\/)?[\w.-]+$/.test(name) || (variant === 'old1' ? !oldFiles[name] : !fs.existsSync(path.join(ROOT, 'docs', name)))) { res.writeHead(404); return res.end(); }
   const type = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }[path.extname(name)];
   res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   let content=variant === 'old1' ? oldFiles[name] : fs.readFileSync(path.join(ROOT, 'docs', name));
