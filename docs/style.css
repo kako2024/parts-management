@@ -186,3 +186,20 @@ input, select, textarea, button {
   }
   .photo-scroll-hint:not(.hidden) { display: block; }
 }
+
+/* PC では詳細の写真を左に寄せ、在庫・仕様・履歴を右に並べる（写真が画面幅いっぱいに広がらないように） */
+@media (min-width: 768px) {
+  .detail-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 8px;
+    max-width: 1152px;
+    margin: 0 auto;
+    padding: 16px;
+    align-items: start;
+  }
+  .detail-photos-col {
+    border-radius: 16px;
+    overflow: hidden;
+  }
+}

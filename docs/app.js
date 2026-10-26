@@ -761,8 +761,8 @@
              qty +
         '    </div>' +
         '    <p class="mt-1 font-semibold text-[15px] truncate">' + esc(it.name) + '</p>' +
-        '    <p class="text-xs text-slate-500 truncate">' + esc(it.item_id) +
-             (it.location ? ' ・ ' + esc(it.location) : '') + '</p>' +
+        '    <p class="text-xs text-slate-500 truncate">' +
+             [it.spec, it.location].filter(Boolean).map(esc).join(' ・ ') + '</p>' +
         '  </div>' +
         '  <svg class="w-5 h-5 text-slate-300 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">' +
         '    <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>' +
@@ -937,6 +937,7 @@
 
     var rows = [
       ['備品ID', item.item_id],
+      ['仕様', item.spec || '—'],
       ['カテゴリ', item.category || '—'],
       ['保管場所', item.location || '—'],
       ['個数', (item.quantity === null || item.quantity === '') ? '—' : item.quantity],
@@ -967,9 +968,12 @@
 
     $('#view-detail').innerHTML = '' +
       '<div id="sync-detail" class="flex items-center gap-2 px-4 py-2 text-xs bg-slate-100 border-b border-slate-200 empty:hidden"></div>' +
+      '<div class="detail-layout">' +
+      '<div class="detail-photos-col">' +
       '<div id="detail-photos" data-photo-item="' + esc(item.item_id) + '" class="bg-white photo-strip' + (photos.length > 1 ? ' photo-strip--multiple' : '') + '" role="region" aria-label="備品の写真"' + (photos.length > 1 ? ' tabindex="0"' : '') + '>' + photo + '</div>' +
       (photos.length > 1 ? '<p class="photo-scroll-hint px-4 py-2 text-xs text-slate-500">左右にスワイプして写真を見られます</p>' : '') +
-      '<div class="p-4 space-y-4">' +
+      '</div>' +
+      '<div class="p-4 space-y-4 min-w-0">' +
       '  <div>' +
       '    <span class="badge ' + statusClass(item.stock_status) + '">' + esc(item.stock_status || '未設定') + '</span>' +
            (pending ? '<span id="saving-indicator" class="ml-2 text-xs text-slate-500">保存中…</span>' : '') +
@@ -995,6 +999,7 @@
       '    <button id="btn-edit" class="h-12 rounded-xl bg-slate-900 text-white font-semibold active:bg-slate-700 disabled:opacity-50"' + dis + '>編集</button>' +
       '    <button id="btn-delete" class="h-12 rounded-xl bg-white border border-rose-300 text-rose-600 font-semibold active:bg-rose-50 disabled:opacity-50"' + dis + '>削除</button>' +
       '  </div>' +
+      '</div>' +
       '</div>';
     $('#detail-photos').scrollLeft = photoScroll;
   }
@@ -1101,7 +1106,7 @@
   function fieldLabel(key) {
     var map = {
       name: '備品名', category: 'カテゴリ', location: '保管場所',
-      stock_status: '在庫', quantity: '個数', note: '備考',
+      stock_status: '在庫', quantity: '個数', note: '備考', spec: '仕様',
       photo_url: '代表写真', photos: '写真', is_deleted: '削除フラグ'
     };
     return map[key] || key;
@@ -1251,7 +1256,7 @@
       item_id: presetItemId || '',
       name: '', category: '', location: '',
       stock_status: state.meta.stockStatuses[0],
-      quantity: '', note: '', photo_url: ''
+      quantity: '', note: '', spec: '', photo_url: ''
     };
     var v = draft ? Object.assign({}, base, draft.values) : base;
 
@@ -1296,6 +1301,8 @@
            idField +
       '    <div><label class="field-label" for="f-name">備品名 <span class="text-rose-500">*</span></label>' +
       '      <input id="f-name" class="field-input" type="text" required value="' + esc(v.name) + '" placeholder="コピー用紙 A4"></div>' +
+      '    <div><label class="field-label" for="f-spec">仕様（一覧に表示）</label>' +
+      '      <input id="f-spec" class="field-input" type="text" value="' + esc(v.spec || '') + '" placeholder="六角 1.5 / プラス 1.0 など"></div>' +
       '    <div><label class="field-label" for="f-category">カテゴリ</label>' +
       '      <input id="f-category" class="field-input" type="text" list="dl-category" value="' + esc(v.category) + '" placeholder="事務用品">' +
              datalist('dl-category', state.meta.categories) + '</div>' +
@@ -1333,7 +1340,7 @@
   }
 
   /** 編集で送る項目（変えた項目だけを送る。PLAN-2 項目 2） */
-  var EDIT_FIELDS = ['name', 'category', 'location', 'stock_status', 'quantity', 'note'];
+  var EDIT_FIELDS = ['name', 'category', 'location', 'stock_status', 'quantity', 'note', 'spec'];
 
   /** フォームと備品の値を比べられる形にそろえる（個数は空欄と null を同じに扱う） */
   function fieldText(key, v) {
@@ -1408,7 +1415,8 @@
       location: $('#f-location').value.trim(),
       stock_status: $('#f-status').value,
       quantity: $('#f-quantity').value === '' ? null : Number($('#f-quantity').value),
-      note: $('#f-note').value.trim()
+      note: $('#f-note').value.trim(),
+      spec: $('#f-spec').value.trim()
     };
     if (state.photoDraft.waiting.length) {
       photoInputError('待機中の写真があります。写真を外して追加するか、待機中の写真を外してください');
@@ -1444,7 +1452,7 @@
     var draft = {
       values: {
         name: payload.name, category: payload.category, location: payload.location,
-        stock_status: payload.stock_status, quantity: $('#f-quantity').value, note: payload.note,
+        stock_status: payload.stock_status, quantity: $('#f-quantity').value, note: payload.note, spec: payload.spec,
         item_id: isEdit ? itemId : (payload.item_id || '')
       },
       photo: state.photoDraft
@@ -1463,7 +1471,7 @@
     if (isEdit) noteLocalWrite(itemId);
     var optimistic = Object.assign({}, prev || { item_id: payload.item_id || '（採番中）', is_deleted: false }, {
       name: payload.name, category: payload.category, location: payload.location,
-      stock_status: payload.stock_status, quantity: payload.quantity, note: payload.note,
+      stock_status: payload.stock_status, quantity: payload.quantity, note: payload.note, spec: payload.spec,
       photos: draft.photo.photos.map(function (p) { return { id: p.id, url: p.previewUrl || p.url }; }),
       photo_url: (draft.photo.photos.filter(function (p) { return p.id === draft.photo.primary; })[0] || {}).previewUrl ||
         (draft.photo.photos.filter(function (p) { return p.id === draft.photo.primary; })[0] || {}).url || '',

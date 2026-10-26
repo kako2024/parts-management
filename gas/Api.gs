@@ -157,7 +157,7 @@ function filterAndSortItems_(items, payload) {
     if (restock && CONST.RESTOCK_STATUSES.indexOf(it.stock_status) === -1) return false;
     if (kw) {
       var hay = (it.item_id + ' ' + it.name + ' ' + it.category + ' ' +
-                 it.location + ' ' + it.note).toLowerCase();
+                 it.location + ' ' + it.note + ' ' + it.spec).toLowerCase();
       if (hay.indexOf(kw) === -1) return false;
     }
     return true;
@@ -186,7 +186,7 @@ function actGetItem_(payload) {
 
 /**
  * 新規登録。
- * payload: { name, category, location, stock_status, quantity?, note?, item_id?, photo?, op_id?, op_attempt? }
+ * payload: { name, category, location, stock_status, quantity?, note?, spec?, item_id?, photo?, op_id?, op_attempt? }
  * photo: { data(base64), mimeType, filename }
  *
  * 備品の行 → 履歴 → 写真 の順に保存する。写真の形式・大きさは行を書く前に確かめる（誤りなら何も保存しない）。
@@ -212,6 +212,7 @@ function actCreateItem_(payload, user) {
     stock_status: status,
     quantity: payload.quantity,
     note: payload.note,
+    spec: payload.spec,
     photo_url: ''
   };
 
@@ -300,7 +301,7 @@ function actUpdateStatus_(payload, user) {
 
 /**
  * 備品情報の一般更新。
- * payload: { item_id, name?, category?, location?, stock_status?, quantity?, note?, photo?, base_version? }
+ * payload: { item_id, name?, category?, location?, stock_status?, quantity?, note?, spec?, photo?, base_version? }
  */
 function actUpdateItem_(payload, user) {
   var itemId = sanitizeText_(payload.item_id, 64);
@@ -323,6 +324,7 @@ function actUpdateItem_(payload, user) {
   if (payload.category !== undefined) patch.category = sanitizeText_(payload.category, 60);
   if (payload.location !== undefined) patch.location = sanitizeText_(payload.location, 120);
   if (payload.note !== undefined) patch.note = sanitizeText_(payload.note, 1000);
+  if (payload.spec !== undefined) patch.spec = sanitizeText_(payload.spec, 200);
   if (payload.quantity !== undefined) patch.quantity = toNumOrNull_(payload.quantity);
   if (payload.stock_status !== undefined) {
     var st = sanitizeText_(payload.stock_status, 20);

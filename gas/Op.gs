@@ -240,7 +240,7 @@ function resumeAfterState_(action, payload) {
   if (action === 'deleteItem') return { is_deleted: true };
   if (action === 'updateStatus') return pick(['stock_status', 'quantity', 'note']);
   if (action === 'updateItem') {
-    var patch = pick(['name', 'category', 'location', 'stock_status', 'quantity', 'note']);
+    var patch = pick(['name', 'category', 'location', 'stock_status', 'quantity', 'note', 'spec']);
     if (payload.photo && payload.photo.data) patch.photo = '（写真を保存）';
     return patch;
   }

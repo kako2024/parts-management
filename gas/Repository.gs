@@ -75,6 +75,7 @@ function rowToItem_(row, idx, rowNumber) {
     quantity: toNumOrNull_(row[idx.quantity]),
     photo_url: toStr_(row[idx.photo_url]),
     note: toStr_(row[idx.note]),
+    spec: idx.spec === undefined ? '' : toStr_(row[idx.spec]),
     updated_at: toStr_(row[idx.updated_at]),
     updated_by: toStr_(row[idx.updated_by]),
     is_deleted: toBool_(row[idx.is_deleted]),
@@ -92,9 +93,12 @@ function rowToItem_(row, idx, rowNumber) {
  * シートの直接編集でも、内容が変われば変わる。画面は読んだときの版を base_version として更新に添え、
  * サーバーは今の版と違えば保存を止める（assertBaseVersion_）。一覧でも全件に付けるので、暗号用の
  * ハッシュではなく軽い FNV-1a を 2 通り（64 ビット分）使う。
+ * 仕様（spec）は空でないときだけ含める（列を足す前の備品の版を変えず、開いたままの画面の保存を CONFLICT にしない）。
  */
 function itemVersion_(item) {
-  var s = JSON.stringify(CONST.ITEM_HEADERS.map(function (h) { return item[h] === undefined ? null : item[h]; }).concat([item.photos || readPhotos_('', item.photo_url)]));
+  var parts = [item.photos || readPhotos_('', item.photo_url)];
+  if (item.spec) parts.push(item.spec);
+  var s = JSON.stringify(CONST.ITEM_HEADERS.map(function (h) { return item[h] === undefined ? null : item[h]; }).concat(parts));
   var h1 = 0x811c9dc5;
   var h2 = 0x9747b28c;
   for (var i = 0; i < s.length; i++) {
@@ -300,7 +304,7 @@ function nextItemId_(rows) {
 
 /**
  * 備品を新規追加する。
- * @param {Object} input  {name, category, location, stock_status, quantity, note, photo_url, item_id?}
+ * @param {Object} input  {name, category, location, stock_status, quantity, note, spec, photo_url, item_id?}
  * @param {string} userEmail
  * @return {Object} 追加された item
  */
@@ -330,6 +334,7 @@ function insertItem_(input, userEmail) {
     photo_url: sanitizeText_(input.photo_url, 500),
     photos: input.photos || readPhotos_('', input.photo_url),
     note: sanitizeText_(input.note, 1000),
+    spec: sanitizeText_(input.spec, 200),
     updated_at: now,
     updated_by: userEmail,
     is_deleted: false
@@ -340,6 +345,7 @@ function insertItem_(input, userEmail) {
   ensureItemColumn_(data, 'op_ids');
   ensureItemColumn_(data, 'photos');
   ensureItemColumn_(data, 'photo_ops');
+  ensureItemColumn_(data, 'spec');
   var width = data.sheet.getLastColumn();
   var rowArr = new Array(width).fill('');
   CONST.ITEM_HEADERS.forEach(function (h) {
@@ -350,6 +356,7 @@ function insertItem_(input, userEmail) {
   });
   rowArr[idx.photos] = input.photos === undefined ? '' : asCellLiteral_(JSON.stringify(record.photos));
   rowArr[idx.photo_ops] = asCellLiteral_(input.photo_ops || '{}');
+  rowArr[idx.spec] = asCellLiteral_(record.spec);
   // 行と一緒に書くので、行があれば操作の記録もある（Op.gs）
   rowArr[idx.op_ids] = asCellLiteral_(nextOpIds_('', currentOpMark_()));
 
@@ -380,6 +387,7 @@ function updateItemRow_(item, patch, ctx, userEmail) {
   ensureItemColumn_(ctx, 'op_ids');
   ensureItemColumn_(ctx, 'photos');
   ensureItemColumn_(ctx, 'photo_ops');
+  if (patch.spec !== undefined) ensureItemColumn_(ctx, 'spec');
 
   var width = sh.getLastColumn();
   var rowNumber = item._row;

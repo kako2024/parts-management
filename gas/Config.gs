@@ -26,8 +26,9 @@ var CONST = {
    * アプリが使う追加の列（PLAN-2）。無ければ書き込みのときに末尾へ足す（既存のシートはそのまま使える）。
    * op_ids: その備品の行に書き込んだ操作の記録（空白区切り。履歴に残ったものから古い順に消す。Op.gs）。
    * op_id: その履歴を追記した操作（logs の 8 列目に置く）
+   * spec: 仕様（ネジ穴の種類・サイズなど。一覧で備品名の下に出す）
    */
-  ITEM_EXTRA_HEADERS: ['op_ids', 'photos', 'photo_ops'],
+  ITEM_EXTRA_HEADERS: ['op_ids', 'photos', 'photo_ops', 'spec'],
   LOG_EXTRA_HEADERS: ['op_id'],
 
   /** 在庫ステータスの許容値（これ以外は弾く） */

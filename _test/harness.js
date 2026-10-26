@@ -414,6 +414,21 @@ t('updateItem で部分更新できる', () => {
   eq(r.data.item.name, 'コピー用紙 A4', '他の列が壊れている');
 });
 
+t('仕様（spec）は登録・更新・検索でき、空のままなら版を変えない', () => {
+  const before = post('getItem', { item_id: createdId }, 'T1').data.item;
+  eq(before.spec, '');
+  const created = post('createItem', { name: 'M3 ネジ', spec: '六角 1.5' }, 'T1');
+  assert(created.ok, JSON.stringify(created));
+  eq(created.data.item.spec, '六角 1.5');
+  eq(post('getItem', { item_id: createdId }, 'T1').data.item.version, before.version, '仕様の列を足しただけで版が変わった');
+  const up = post('updateItem', { item_id: created.data.item.item_id, spec: 'プラス 1.0', base_version: created.data.item.version }, 'T1');
+  assert(up.ok, JSON.stringify(up));
+  eq(up.data.item.spec, 'プラス 1.0');
+  assert(up.data.item.version !== created.data.item.version, '仕様を変えても版が変わらない');
+  eq(post('getItem', { item_id: created.data.item.item_id }, 'T1').data.item.version, up.data.item.version, '書いた値と読み返した版が違う');
+  eq(post('getItems', { keyword: 'プラス 1.0' }, 'T1').data.items.map(i => i.item_id).join(), created.data.item.item_id);
+});
+
 t('存在しない備品は 404', () => {
   const r = post('getItem', { item_id: 'ITEM-9999' }, 'T1');
   assert(!r.ok && r.error.code === 'ITEM_NOT_FOUND', JSON.stringify(r));
@@ -1032,7 +1047,7 @@ t('追加の列が無い既存のシートでも、書き込みのときに列�
     const op = newOpId();
     const r = postOp('createItem', { name: '旧シート' }, op, 1);
     assert(r.ok, JSON.stringify(r));
-    eq(items._data[0].slice(-3), ['op_ids', 'photos', 'photo_ops'], 'items に列が足されていない');
+    eq(items._data[0].slice(-4), ['op_ids', 'photos', 'photo_ops', 'spec'], 'items に列が足されていない');
     eq(logs._data[0][7], 'op_id', 'logs の 8 列目に op_id がない');
     assert(postOp('createItem', { name: '旧シート' }, op, 2).data.replayed, '足した列で送り直しを判定できない');
     assert(post('getItems', {}, 'T1').data.items.some(i => i.name === '旧シート'), '一覧に出ない');
