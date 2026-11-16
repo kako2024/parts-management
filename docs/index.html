@@ -104,12 +104,14 @@
         </p>
         <div class="pt-2 border-t border-slate-200">
           <label for="manual-id" class="block text-sm font-medium mb-1.5">読み取れないときは備品IDを直接入力</label>
-          <div class="flex gap-2">
+          <!-- form の暗黙送信を使う（IME 変換確定の Enter では送信されない） -->
+          <form id="manual-form" class="flex gap-2">
             <input id="manual-id" type="text" placeholder="ITEM-0001" autocapitalize="characters"
+                   enterkeyhint="go"
                    class="flex-1 h-12 px-3 rounded-xl border border-slate-300 bg-white text-base
                           focus:outline-none focus:ring-2 focus:ring-slate-900">
-            <button id="btn-manual-go" class="h-12 px-5 rounded-xl bg-slate-900 text-white font-semibold active:bg-slate-700">開く</button>
-          </div>
+            <button id="btn-manual-go" type="submit" class="h-12 px-5 rounded-xl bg-slate-900 text-white font-semibold active:bg-slate-700">開く</button>
+          </form>
         </div>
       </div>
     </section>

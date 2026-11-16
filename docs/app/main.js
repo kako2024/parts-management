@@ -154,15 +154,14 @@ function bindEvents() {
     loadItems();
   });
 
-  $('#btn-manual-go').addEventListener('click', function () {
+  // Enter はフォームの暗黙送信に任せる（IME 変換確定の Enter では送信されない）
+  $('#manual-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
     var id = $('#manual-id').value.trim();
     if (!id) return;
     $('#manual-id').value = '';
     PERF.begin('B ID入力→詳細');
     openDetail(extractItemId(id));
-  });
-  $('#manual-id').addEventListener('keydown', function (ev) {
-    if (ev.key === 'Enter') { ev.preventDefault(); $('#btn-manual-go').click(); }
   });
 
   // タブが裏に回ったらカメラを止める

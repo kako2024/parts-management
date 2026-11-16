@@ -257,6 +257,13 @@ const server = http.createServer((req, res) => {
   }
   if (!fs.existsSync(file)) { res.writeHead(404); return res.end('nf'); }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'text/plain' });
+  // CDN スクリプトを下でモックに差し替えるため，SRI（integrity）を外して配信する
+  if (path.extname(file) === '.html') {
+    return res.end(fs.readFileSync(file, 'utf8').replace(/\s+integrity="[^"]*"/g, ''));
+  }
+  if (p === '/app/scan.js') {
+    return res.end(fs.readFileSync(file, 'utf8').replace(/(SCANNER_LIB_INTEGRITY = )'[^']*'/, "$1''"));
+  }
   res.end(fs.readFileSync(file));
 });
 

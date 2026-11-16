@@ -9,6 +9,8 @@
  * ==============================================================*/
 
 var SCANNER_LIB_URL = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+// SRI。版を上げたら作り直す: openssl dgst -sha384 -binary html5-qrcode.min.js | openssl base64 -A
+var SCANNER_LIB_INTEGRITY = 'sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+';
 var scannerLibPromise = null;
 
 /**
@@ -21,7 +23,10 @@ function loadScannerLib() {
     scannerLibPromise = new Promise(function (resolve) {
       var s = document.createElement('script');
       s.src = SCANNER_LIB_URL;
-      // 読み込めなかった・中身が使えなかったときは、次に開いたときに読み込み直す
+      s.integrity = SCANNER_LIB_INTEGRITY;
+      s.crossOrigin = 'anonymous';
+      s.referrerPolicy = 'no-referrer';
+      // 読み込めなかった（改ざんで SRI に弾かれた場合も onerror になる）・中身が使えなかったときは、次に開いたときに読み込み直す
       var fail = function () { s.remove(); scannerLibPromise = null; resolve(false); };
       s.onload = function () { if (window.Html5Qrcode) resolve(true); else fail(); };
       s.onerror = fail;
